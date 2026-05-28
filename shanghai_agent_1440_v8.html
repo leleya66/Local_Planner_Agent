@@ -1,0 +1,598 @@
+<h2 class="sr-only">Shanghai Weekend Route Planner – 1440px wide single-day layout, larger fonts, per-stop task cards, summary at bottom of timeline, SVG route map, tips in right panel</h2>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#F7F6FC;}
+.page{width:1440px;height:900px;display:grid;grid-template-columns:280px 1fr;font-family:var(--font-sans);position:relative;overflow:hidden;background:#F7F6FC;}
+.orb1{position:absolute;top:-180px;right:-180px;width:620px;height:620px;border-radius:50%;background:conic-gradient(from 200deg,#FAC775,#F0997B,#ED93B1,#AFA9EC,#85B7EB,#5DCAA5,#FAC775);opacity:.14;z-index:0;filter:blur(70px);pointer-events:none;}
+.orb2{position:absolute;bottom:-200px;left:30px;width:440px;height:440px;border-radius:50%;background:conic-gradient(from 0deg,#85B7EB,#AFA9EC,#ED93B1);opacity:.10;z-index:0;filter:blur(60px);pointer-events:none;}
+
+/* SIDEBAR */
+.sidebar{position:relative;z-index:2;display:flex;flex-direction:column;background:rgba(255,255,255,0.84);border-right:1px solid rgba(220,215,245,0.7);}
+.sidebar-header{padding:20px 18px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(220,215,245,0.5);}
+.logo-blob{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#7F77DD;}
+.logo-blob i{font-size:17px;color:#fff;}
+.brand{font-size:15px;font-weight:500;color:#2C2C2A;}
+.brand-sub{font-size:12px;color:#B4B2A9;margin-top:1px;}
+.new-btn{margin:12px 12px 8px;padding:10px 14px;border-radius:13px;border:1px dashed rgba(127,119,221,0.4);background:transparent;color:#534AB7;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:500;}
+.new-btn:hover{background:rgba(127,119,221,0.06);}
+.history{flex:1;overflow-y:auto;padding:4px 10px 8px;display:flex;flex-direction:column;gap:3px;}
+.h-sep{font-size:11px;color:#B4B2A9;padding:8px 4px 4px;letter-spacing:.05em;font-weight:500;}
+.h-item{padding:10px 12px;border-radius:11px;cursor:pointer;border:1px solid transparent;position:relative;}
+.h-item:hover{background:rgba(127,119,221,0.06);border-color:rgba(175,169,236,0.3);}
+.h-item.active{background:rgba(127,119,221,0.09);border-color:rgba(175,169,236,0.55);}
+.h-dot{width:7px;height:7px;border-radius:50%;position:absolute;left:12px;top:50%;transform:translateY(-50%);}
+.h-title{font-size:13px;font-weight:500;color:#2C2C2A;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.h-preview{font-size:12px;color:#B4B2A9;margin-top:2px;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.h-time{font-size:11px;color:#D3D1C7;margin-top:2px;padding-left:16px;}
+
+/* MAIN */
+.main{position:relative;z-index:2;display:flex;flex-direction:column;overflow:hidden;}
+.topbar{padding:15px 28px 12px;border-bottom:1px solid rgba(220,215,245,0.5);display:flex;align-items:center;justify-content:space-between;flex-shrink:0;background:rgba(255,255,255,0.72);}
+.route-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#EEEDFE;}
+.route-icon i{font-size:20px;color:#7F77DD;}
+.topbar-title{font-size:17px;font-weight:500;color:#2C2C2A;}
+.topbar-meta{font-size:12px;color:#B4B2A9;margin-top:3px;display:flex;align-items:center;gap:14px;}
+.mc{display:inline-flex;align-items:center;gap:4px;}
+.mc i{font-size:12px;}
+.top-actions{display:flex;gap:8px;}
+.t-btn{height:30px;padding:0 12px;border-radius:9px;border:1px solid rgba(220,215,245,0.8);background:rgba(255,255,255,0.6);display:flex;align-items:center;gap:5px;cursor:pointer;color:#888780;font-size:13px;}
+.t-btn:hover{background:#fff;color:#534AB7;border-color:rgba(175,169,236,0.5);}
+.t-btn i{font-size:14px;}
+
+/* CONTENT GRID */
+.content{flex:1;display:grid;grid-template-columns:1fr 320px;overflow:hidden;}
+.timeline-scroll{overflow-y:auto;padding:20px 26px 20px;}
+
+/* DAY HEADER */
+.day-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+.day-pill{font-size:12px;font-weight:500;padding:5px 14px;border-radius:999px;white-space:nowrap;background:rgba(255,255,255,0.9);border:1px solid rgba(175,169,236,0.4);color:#534AB7;}
+.day-line{flex:1;height:1px;background:rgba(175,169,236,0.18);}
+.ds{font-size:12px;color:#B4B2A9;display:flex;align-items:center;gap:3px;}
+
+/* STOP ROWS */
+.stop-row{display:grid;grid-template-columns:46px 1fr;margin-bottom:0;}
+.spine{display:flex;flex-direction:column;align-items:center;padding-top:8px;}
+.s-dot{width:13px;height:13px;border-radius:50%;border:2px solid;flex-shrink:0;}
+.s-line{width:2px;flex:1;min-height:12px;margin:3px 0;opacity:.28;}
+.sc-y{border-color:#BA7517;background:#FAEEDA;}.sl-y{background:#BA7517;}
+.sc-o{border-color:#D85A30;background:#FAECE7;}.sl-o{background:#D85A30;}
+.sc-pk{border-color:#D4537E;background:#FBEAF0;}.sl-pk{background:#D4537E;}
+.sc-pu{border-color:#7F77DD;background:#EEEDFE;}.sl-pu{background:#7F77DD;}
+.sc-bl{border-color:#378ADD;background:#E6F1FB;}.sl-bl{background:#378ADD;}
+.sc-gr{border-color:#3B6D11;background:#EAF3DE;}.sl-gr{background:#3B6D11;}
+
+/* STOP CARD */
+.stop-card{border-radius:14px;padding:13px 15px;border:1px solid rgba(220,215,245,0.7);background:rgba(255,255,255,0.82);margin-bottom:0;}
+.stop-card:hover{background:rgba(255,255,255,0.97);border-color:rgba(175,169,236,0.4);}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+.card-left{flex:1;min-width:0;}
+.tb{font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;display:inline-block;margin-bottom:5px;}
+.tb-y{background:#FAEEDA;color:#633806;border:1px solid #FAC775;}
+.tb-o{background:#FAECE7;color:#712B13;border:1px solid #F0997B;}
+.tb-pk{background:#FBEAF0;color:#72243E;border:1px solid #ED93B1;}
+.tb-pu{background:#EEEDFE;color:#3C3489;border:1px solid #AFA9EC;}
+.tb-bl{background:#E6F1FB;color:#0C447C;border:1px solid #85B7EB;}
+.tb-gr{background:#EAF3DE;color:#27500A;border:1px solid #97C459;}
+.stop-name{font-size:15px;font-weight:500;color:#2C2C2A;margin-bottom:3px;}
+.stop-desc{font-size:13px;color:#888780;line-height:1.55;}
+.tags{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;}
+.tag{font-size:11px;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:3px;background:rgba(247,246,252,0.9);border:1px solid rgba(220,215,245,0.8);color:#888780;}
+.tag i{font-size:11px;}
+
+/* PLACE TYPE BADGE */
+.ptb{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;padding:6px 8px;border-radius:11px;border:1px solid;min-width:54px;}
+.ptb i{font-size:20px;}
+.ptb span{font-size:10px;font-weight:500;text-align:center;white-space:nowrap;}
+.ptb-attraction{border-color:#AFA9EC;background:#EEEDFE;color:#3C3489;}.ptb-attraction i{color:#534AB7;}
+.ptb-restaurant{border-color:#F0997B;background:#FAECE7;color:#712B13;}.ptb-restaurant i{color:#D85A30;}
+.ptb-museum{border-color:#ED93B1;background:#FBEAF0;color:#72243E;}.ptb-museum i{color:#D4537E;}
+.ptb-street{border-color:#FAC775;background:#FAEEDA;color:#633806;}.ptb-street i{color:#BA7517;}
+.ptb-cafe{border-color:#85B7EB;background:#E6F1FB;color:#0C447C;}.ptb-cafe i{color:#378ADD;}
+.ptb-park{border-color:#97C459;background:#EAF3DE;color:#27500A;}.ptb-park i{color:#3B6D11;}
+
+/* TASK ROW — beneath each stop card */
+.task-row{display:flex;gap:6px;margin-top:8px;flex-wrap:wrap;}
+.task-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(220,215,245,0.8);background:rgba(255,255,255,0.75);font-size:12px;color:#534AB7;cursor:pointer;font-weight:500;transition:all .13s;}
+.task-btn:hover{background:#EEEDFE;border-color:#AFA9EC;}
+.task-btn i{font-size:13px;}
+.task-btn.running{color:#888780;background:#F7F6FC;border-color:rgba(220,215,245,0.8);cursor:default;}
+.task-btn.done{color:#0F6E56;background:#E1F5EE;border-color:#5DCAA5;cursor:default;}
+
+/* TRANSIT */
+.transit-block{display:grid;grid-template-columns:46px 1fr;align-items:stretch;}
+.t-spine-wrap{display:flex;justify-content:center;}
+.t-spine-line{width:2px;background:repeating-linear-gradient(to bottom,rgba(175,169,236,0.35) 0 3px,transparent 3px 7px);}
+.transit-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;border:1px solid rgba(220,215,245,0.8);background:rgba(255,255,255,0.7);margin:5px 0;cursor:pointer;font-size:12px;color:#888780;position:relative;}
+.transit-pill:hover,.transit-pill.open{border-color:#AFA9EC;background:#EEEDFE;color:#3C3489;}
+.transit-pill i.t-icon{font-size:13px;}
+.transit-pill i.chev{font-size:10px;color:#AFA9EC;transition:transform .15s;}
+.transit-pill.open i.chev{transform:rotate(180deg);}
+.transport-popup{position:absolute;top:calc(100%+5px);left:0;background:#fff;border:1px solid rgba(220,215,245,0.9);border-radius:13px;padding:9px;z-index:30;display:none;min-width:230px;}
+.transport-popup.open{display:block;}
+.tp-label{font-size:11px;font-weight:500;color:#B4B2A9;letter-spacing:.04em;margin-bottom:7px;padding:0 2px;}
+.tp-opt{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;border:1px solid transparent;cursor:pointer;margin-bottom:3px;}
+.tp-opt:last-child{margin-bottom:0;}
+.tp-opt:hover{background:#F7F6FC;border-color:rgba(220,215,245,0.8);}
+.tp-opt.sel{background:#EEEDFE;border-color:#AFA9EC;}
+.tp-iw{width:28px;height:28px;border-radius:8px;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.tp-iw-w{background:#EAF3DE;}.tp-iw-w i{color:#3B6D11;}
+.tp-iw-c{background:#FAEEDA;}.tp-iw-c i{color:#854F0B;}
+.tp-iw-m{background:#EEEDFE;}.tp-iw-m i{color:#534AB7;}
+.tp-iw i{font-size:14px;}
+.tp-mode{font-size:13px;font-weight:500;color:#2C2C2A;}
+.tp-time{font-size:11px;color:#888780;margin-top:1px;}
+.tp-chk{font-size:12px;color:#7F77DD;opacity:0;}
+.tp-opt.sel .tp-chk{opacity:1;}
+
+/* SUMMARY CARD */
+.summary-card{border-radius:14px;border:1px solid rgba(220,215,245,0.7);background:rgba(255,255,255,0.82);padding:14px 16px;margin-top:10px;display:flex;align-items:center;gap:0;}
+.sum-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;}
+.sum-item+.sum-item{border-left:1px solid rgba(220,215,245,0.6);}
+.sum-val{font-size:20px;font-weight:500;color:#2C2C2A;}
+.sum-lbl{font-size:12px;color:#B4B2A9;}
+
+/* MAP SECTION */
+.map-section{margin-top:18px;padding-top:16px;border-top:1px solid rgba(175,169,236,0.14);}
+.section-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:11px;}
+.section-title{font-size:14px;font-weight:500;color:#2C2C2A;display:flex;align-items:center;gap:7px;}
+.section-title i{font-size:16px;color:#7F77DD;}
+.map-wrap{border-radius:14px;border:1px solid rgba(220,215,245,0.7);background:rgba(255,255,255,0.78);overflow:hidden;}
+
+/* RIGHT PANEL */
+.right-panel{border-left:1px solid rgba(220,215,245,0.5);padding:20px 18px;display:flex;flex-direction:column;gap:16px;background:rgba(255,255,255,0.5);overflow-y:auto;}
+.rp-label{font-size:11px;font-weight:500;color:#B4B2A9;letter-spacing:.05em;margin-bottom:8px;}
+.tip-card{padding:11px 13px;border-radius:12px;background:rgba(255,255,255,0.85);border:1px solid rgba(220,215,245,0.6);font-size:13px;color:#888780;line-height:1.65;}
+.tip-card strong{color:#534AB7;font-weight:500;}
+
+/* BOTTOM */
+.bottom-panel{flex-shrink:0;border-top:1px solid rgba(220,215,245,0.5);background:rgba(255,255,255,0.78);}
+.prefs-strip{padding:9px 26px 7px;display:flex;align-items:center;gap:10px;}
+.pref-dd{position:relative;}
+.pref-trig{height:28px;padding:0 11px;border-radius:999px;border:1px solid rgba(175,169,236,0.45);background:rgba(255,255,255,0.85);color:#534AB7;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.pref-trig:hover{background:#fff;border-color:rgba(127,119,221,0.6);}
+.pref-trig i.chev{font-size:10px;color:#AFA9EC;transition:transform .18s;}
+.pref-trig.open i.chev{transform:rotate(180deg);}
+.pref-panel{position:absolute;bottom:calc(100% + 8px);left:0;background:#fff;border:1px solid rgba(220,215,245,0.9);border-radius:15px;padding:13px 13px 11px;z-index:20;display:none;}
+.pref-panel.open{display:block;}
+.pp-label{font-size:11px;font-weight:500;color:#B4B2A9;letter-spacing:.05em;margin-bottom:9px;}
+.igrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:370px;}
+.int-chip{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,0.8);background:#F7F6FC;cursor:pointer;transition:all .13s;}
+.int-chip:hover{border-color:rgba(175,169,236,0.55);background:#F0EEFE;}
+.int-chip.on{border-color:#AFA9EC;background:#EEEDFE;}
+.int-chip i{font-size:17px;color:#B4B2A9;}
+.int-chip.on i{color:#534AB7;}
+.int-chip span{font-size:11px;color:#888780;font-weight:500;}
+.int-chip.on span{color:#3C3489;}
+.pace-row{display:flex;gap:5px;width:210px;}
+.pace-chip{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,0.8);background:#F7F6FC;cursor:pointer;transition:all .13s;}
+.pace-chip:hover{border-color:rgba(175,169,236,0.55);background:#F0EEFE;}
+.pace-chip.on{border-color:#AFA9EC;background:#EEEDFE;}
+.pace-chip i{font-size:15px;color:#B4B2A9;}
+.pace-chip.on i{color:#534AB7;}
+.pace-chip span{font-size:11px;color:#888780;font-weight:500;}
+.pace-chip.on span{color:#3C3489;}
+.psep{width:1px;height:18px;background:rgba(175,169,236,0.25);margin:0 2px;}
+.regen-btn{height:28px;padding:0 13px;border-radius:999px;border:none;background:#7F77DD;color:#fff;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;margin-left:4px;}
+.regen-btn:hover{background:#534AB7;}
+.regen-btn i{font-size:12px;}
+.input-row{padding:7px 26px 12px;display:flex;gap:9px;align-items:center;}
+.chat-input{flex:1;font-size:14px;padding:9px 15px;border-radius:13px;border:1px solid rgba(220,215,245,0.7);background:rgba(255,255,255,0.88);color:#2C2C2A;}
+.chat-input:focus{outline:none;border-color:#AFA9EC;background:#fff;}
+.send-btn{width:36px;height:36px;border-radius:12px;border:none;background:#7F77DD;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.send-btn:hover{background:#534AB7;}
+.send-btn i{font-size:15px;color:#fff;}
+</style>
+
+<div class="page">
+<div class="orb1"></div><div class="orb2"></div>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo-blob"><i class="ti ti-route" aria-hidden="true"></i></div>
+    <div><div class="brand">Route Planner</div><div class="brand-sub">Shanghai weekend agent</div></div>
+  </div>
+  <button class="new-btn"><i class="ti ti-plus" style="font-size:13px" aria-hidden="true"></i> New plan</button>
+  <div class="history">
+    <div class="h-sep">Today</div>
+    <div class="h-item active"><div class="h-dot" style="background:#7F77DD"></div><div class="h-title">Food & culture half-day</div><div class="h-preview">Bund, Yu Garden, Museum…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px" aria-hidden="true"></i> 2 min ago</div></div>
+    <div class="h-item"><div class="h-dot" style="background:#D4537E"></div><div class="h-title">Art district morning</div><div class="h-preview">M50, Power Station…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px" aria-hidden="true"></i> 1 hr ago</div></div>
+    <div class="h-sep">Yesterday</div>
+    <div class="h-item"><div class="h-dot" style="background:#378ADD"></div><div class="h-title">Old town afternoon</div><div class="h-preview">Tianzifang, Xintiandi…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px" aria-hidden="true"></i> Yesterday</div></div>
+    <div class="h-item"><div class="h-dot" style="background:#EF9F27"></div><div class="h-title">Rooftop evening</div><div class="h-preview">Flair, Vue, Bar Rouge…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px" aria-hidden="true"></i> Yesterday</div></div>
+    <div class="h-sep">Earlier</div>
+    <div class="h-item"><div class="h-dot" style="background:#1D9E75"></div><div class="h-title">Hidden gems walk</div><div class="h-preview">Wukang Rd, Fuxing Park…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px" aria-hidden="true"></i> Mon</div></div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="route-icon"><i class="ti ti-map-pin" aria-hidden="true"></i></div>
+      <div>
+        <div class="topbar-title">Food & culture half-day</div>
+        <div class="topbar-meta">
+          <span class="mc"><i class="ti ti-calendar" aria-hidden="true"></i>Saturday</span>
+          <span class="mc"><i class="ti ti-map-pin" aria-hidden="true"></i>4 stops</span>
+          <span class="mc"><i class="ti ti-clock" aria-hidden="true"></i>~5 hrs</span>
+          <span class="mc"><i class="ti ti-walk" aria-hidden="true"></i>3.4 km walking</span>
+        </div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="t-btn"><i class="ti ti-share" aria-hidden="true"></i> Share</button>
+      <button class="t-btn"><i class="ti ti-download" aria-hidden="true"></i> Export</button>
+      <button class="t-btn"><i class="ti ti-map" aria-hidden="true"></i> Map view</button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="timeline-scroll">
+
+      <div class="day-header">
+        <span class="day-pill"><i class="ti ti-sun" style="font-size:11px;vertical-align:-1px;margin-right:3px" aria-hidden="true"></i>Saturday morning · 09:00 – 14:00</span>
+        <div class="day-line"></div>
+        <span class="ds"><i class="ti ti-clock" aria-hidden="true"></i>5 hrs</span>
+        <span class="ds" style="margin-left:8px"><i class="ti ti-walk" aria-hidden="true"></i>3.4 km</span>
+      </div>
+
+      <!-- STOP 1 -->
+      <div class="stop-row">
+        <div class="spine"><div class="s-dot sc-y"></div><div class="s-line sl-y" style="min-height:80px"></div></div>
+        <div class="stop-card">
+          <div class="card-head">
+            <div class="card-left">
+              <span class="tb tb-y">09:00 AM</span>
+              <div class="stop-name">The Bund</div>
+              <div class="stop-desc">Shanghai's iconic waterfront promenade — colonial-era facades facing the gleaming Pudong skyline. Best photographed before 10am when crowds are thin and light is golden.</div>
+              <div class="tags">
+                <span class="tag"><i class="ti ti-building" aria-hidden="true"></i>Sightseeing</span>
+                <span class="tag"><i class="ti ti-walk" aria-hidden="true"></i>Walking</span>
+              </div>
+            </div>
+            <div class="ptb ptb-attraction"><i class="ti ti-building-arch" aria-hidden="true"></i><span>Attraction</span></div>
+          </div>
+          <div class="task-row">
+            <button class="task-btn" id="tb1a" onclick="runTask('tb1a','Find the best photography spots along the Bund and suggest the ideal time window for golden hour shots.')"><i class="ti ti-camera" aria-hidden="true"></i> Photography spots ↗</button>
+            <button class="task-btn" id="tb1b" onclick="runTask('tb1b','Check if there are any guided walking tours available at the Bund this weekend and find booking links.')"><i class="ti ti-map-2" aria-hidden="true"></i> Book guided tour ↗</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRANSIT 1 -->
+      <div class="transit-block">
+        <div class="t-spine-wrap"><div class="t-spine-line"></div></div>
+        <div style="padding:3px 0;">
+          <div class="transit-pill" id="tr1" onclick="toggleT('tr1','tp1')">
+            <i class="ti ti-train t-icon" aria-hidden="true"></i>
+            <span id="tr1-lbl">Metro line 2 · 8 min</span>
+            <i class="ti ti-chevron-down chev" aria-hidden="true"></i>
+            <div class="transport-popup" id="tp1">
+              <div class="tp-label">Choose transport</div>
+              <div class="tp-opt" onclick="selT(event,'tr1','tp1','ti-walk','Walking · 22 min')"><div class="tp-iw tp-iw-w"><i class="ti ti-walk" aria-hidden="true"></i></div><div><div class="tp-mode">Walking</div><div class="tp-time">22 min · 1.8 km</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+              <div class="tp-opt" onclick="selT(event,'tr1','tp1','ti-car','Taxi · 6 min')"><div class="tp-iw tp-iw-c"><i class="ti ti-car" aria-hidden="true"></i></div><div><div class="tp-mode">Taxi / ride-hail</div><div class="tp-time">6 min · ¥18–24</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+              <div class="tp-opt sel" onclick="selT(event,'tr1','tp1','ti-train','Metro line 2 · 8 min')"><div class="tp-iw tp-iw-m"><i class="ti ti-train" aria-hidden="true"></i></div><div><div class="tp-mode">Metro line 2</div><div class="tp-time">8 min · ¥4</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOP 2 -->
+      <div class="stop-row">
+        <div class="spine"><div class="s-dot sc-o"></div><div class="s-line sl-o" style="min-height:80px"></div></div>
+        <div class="stop-card">
+          <div class="card-head">
+            <div class="card-left">
+              <span class="tb tb-o">10:00 AM</span>
+              <div class="stop-name">Yu Garden & Old City</div>
+              <div class="stop-desc">16th-century Ming garden with stone bridges and koi ponds, followed by the Chenghuang Temple snack street for xiaolongbao and sesame cakes.</div>
+              <div class="tags">
+                <span class="tag"><i class="ti ti-building-castle" aria-hidden="true"></i>History</span>
+                <span class="tag"><i class="ti ti-bowl" aria-hidden="true"></i>Street food</span>
+              </div>
+            </div>
+            <div class="ptb ptb-park"><i class="ti ti-trees" aria-hidden="true"></i><span>Garden</span></div>
+          </div>
+          <div class="task-row">
+            <button class="task-btn" id="tb2a" onclick="runTask('tb2a','Buy 2 Yu Garden entry tickets online and find the fastest entrance to skip the main queue.')"><i class="ti ti-ticket" aria-hidden="true"></i> Buy tickets ↗</button>
+            <button class="task-btn" id="tb2b" onclick="runTask('tb2b','Find top-rated xiaolongbao stalls near Chenghuang Temple snack street with current queue times.')"><i class="ti ti-bowl" aria-hidden="true"></i> Find best stalls ↗</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRANSIT 2 -->
+      <div class="transit-block">
+        <div class="t-spine-wrap"><div class="t-spine-line"></div></div>
+        <div style="padding:3px 0;">
+          <div class="transit-pill" id="tr2" onclick="toggleT('tr2','tp2')">
+            <i class="ti ti-walk t-icon" aria-hidden="true"></i>
+            <span id="tr2-lbl">Walking · 12 min</span>
+            <i class="ti ti-chevron-down chev" aria-hidden="true"></i>
+            <div class="transport-popup" id="tp2">
+              <div class="tp-label">Choose transport</div>
+              <div class="tp-opt sel" onclick="selT(event,'tr2','tp2','ti-walk','Walking · 12 min')"><div class="tp-iw tp-iw-w"><i class="ti ti-walk" aria-hidden="true"></i></div><div><div class="tp-mode">Walking</div><div class="tp-time">12 min · 0.9 km</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+              <div class="tp-opt" onclick="selT(event,'tr2','tp2','ti-car','Taxi · 4 min')"><div class="tp-iw tp-iw-c"><i class="ti ti-car" aria-hidden="true"></i></div><div><div class="tp-mode">Taxi / ride-hail</div><div class="tp-time">4 min · ¥12–16</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+              <div class="tp-opt" onclick="selT(event,'tr2','tp2','ti-train','Metro line 8 · 9 min')"><div class="tp-iw tp-iw-m"><i class="ti ti-train" aria-hidden="true"></i></div><div><div class="tp-mode">Metro line 8</div><div class="tp-time">9 min · ¥3</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOP 3 -->
+      <div class="stop-row">
+        <div class="spine"><div class="s-dot sc-pk"></div><div class="s-line sl-pk" style="min-height:80px"></div></div>
+        <div class="stop-card">
+          <div class="card-head">
+            <div class="card-left">
+              <span class="tb tb-pk">11:30 AM</span>
+              <div class="stop-name">Shanghai Museum</div>
+              <div class="stop-desc">World-class Chinese bronzes, ceramics and jade spanning 5,000 years of history. Allow at least 90 minutes for the highlights on floors 1 and 2.</div>
+              <div class="tags">
+                <span class="tag"><i class="ti ti-palette" aria-hidden="true"></i>Art</span>
+                <span class="tag"><i class="ti ti-clock-hour-4" aria-hidden="true"></i>History</span>
+              </div>
+            </div>
+            <div class="ptb ptb-museum"><i class="ti ti-building-monument" aria-hidden="true"></i><span>Museum</span></div>
+          </div>
+          <div class="task-row">
+            <button class="task-btn" id="tb3a" onclick="runTask('tb3a','Check if Shanghai Museum requires advance booking this weekend and confirm free entry details.')"><i class="ti ti-ticket" aria-hidden="true"></i> Check entry ↗</button>
+            <button class="task-btn" id="tb3b" onclick="runTask('tb3b','Find out if Shanghai Museum has any special exhibitions this weekend and if they need separate tickets.')"><i class="ti ti-star" aria-hidden="true"></i> Special exhibitions ↗</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- TRANSIT 3 -->
+      <div class="transit-block">
+        <div class="t-spine-wrap"><div class="t-spine-line"></div></div>
+        <div style="padding:3px 0;">
+          <div class="transit-pill" id="tr3" onclick="toggleT('tr3','tp3')">
+            <i class="ti ti-train t-icon" aria-hidden="true"></i>
+            <span id="tr3-lbl">Metro line 1 · 6 min</span>
+            <i class="ti ti-chevron-down chev" aria-hidden="true"></i>
+            <div class="transport-popup" id="tp3">
+              <div class="tp-label">Choose transport</div>
+              <div class="tp-opt" onclick="selT(event,'tr3','tp3','ti-walk','Walking · 28 min')"><div class="tp-iw tp-iw-w"><i class="ti ti-walk" aria-hidden="true"></i></div><div><div class="tp-mode">Walking</div><div class="tp-time">28 min · 2.2 km</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+              <div class="tp-opt" onclick="selT(event,'tr3','tp3','ti-car','Taxi · 7 min')"><div class="tp-iw tp-iw-c"><i class="ti ti-car" aria-hidden="true"></i></div><div><div class="tp-mode">Taxi / ride-hail</div><div class="tp-time">7 min · ¥20–28</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+              <div class="tp-opt sel" onclick="selT(event,'tr3','tp3','ti-train','Metro line 1 · 6 min')"><div class="tp-iw tp-iw-m"><i class="ti ti-train" aria-hidden="true"></i></div><div><div class="tp-mode">Metro line 1</div><div class="tp-time">6 min · ¥3</div></div><i class="ti ti-check tp-chk" aria-hidden="true"></i></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- STOP 4 -->
+      <div class="stop-row">
+        <div class="spine"><div class="s-dot sc-pu"></div></div>
+        <div class="stop-card">
+          <div class="card-head">
+            <div class="card-left">
+              <span class="tb tb-pu">13:30 PM</span>
+              <div class="stop-name">Xintiandi lunch</div>
+              <div class="stop-desc">Restored shikumen lane houses turned restaurant row. Try Jesse or Ye Shanghai for elevated Shanghainese — worth booking ahead on weekends even for lunch.</div>
+              <div class="tags">
+                <span class="tag"><i class="ti ti-tools-kitchen-2" aria-hidden="true"></i>Lunch</span>
+                <span class="tag"><i class="ti ti-building" aria-hidden="true"></i>Architecture</span>
+              </div>
+            </div>
+            <div class="ptb ptb-restaurant"><i class="ti ti-tools-kitchen-2" aria-hidden="true"></i><span>Restaurant</span></div>
+          </div>
+          <div class="task-row">
+            <button class="task-btn" id="tb4a" onclick="runTask('tb4a','Reserve a table for 2 at Ye Shanghai Xintiandi for Saturday 13:30 lunch.')"><i class="ti ti-calendar-check" aria-hidden="true"></i> Reserve table ↗</button>
+            <button class="task-btn" id="tb4b" onclick="runTask('tb4b','Search Meituan and Dianping for lunch set meal coupons at Xintiandi restaurants.')"><i class="ti ti-badge-percent" aria-hidden="true"></i> Find coupons ↗</button>
+            <button class="task-btn" id="tb4c" onclick="runTask('tb4c','Check current queue wait times at popular Xintiandi restaurants for Saturday lunch.')"><i class="ti ti-clock" aria-hidden="true"></i> Queue status ↗</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- SUMMARY -->
+      <div class="summary-card">
+        <div class="sum-item"><div class="sum-val">5 hrs</div><div class="sum-lbl">Duration</div></div>
+        <div class="sum-item"><div class="sum-val">4</div><div class="sum-lbl">Stops</div></div>
+        <div class="sum-item"><div class="sum-val">¥80–120</div><div class="sum-lbl">Est. expenses</div></div>
+      </div>
+
+      <!-- MAP -->
+      <div class="map-section">
+        <div class="section-header">
+          <div class="section-title"><i class="ti ti-map-2" aria-hidden="true"></i>Route map</div>
+        </div>
+        <div class="map-wrap">
+          <svg viewBox="0 0 820 190" xmlns="http://www.w3.org/2000/svg" style="width:100%;display:block;">
+            <defs>
+              <marker id="arr" markerWidth="7" markerHeight="7" refX="6" refY="3.5" orient="auto">
+                <polygon points="0 0,7 3.5,0 7" fill="#AFA9EC"/>
+              </marker>
+            </defs>
+            <!-- connectors -->
+            <line x1="118" y1="95" x2="238" y2="95" stroke="#AFA9EC" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+            <line x1="358" y1="95" x2="478" y2="95" stroke="#AFA9EC" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+            <line x1="598" y1="95" x2="698" y2="95" stroke="#AFA9EC" stroke-width="1.5" stroke-dasharray="4,3" marker-end="url(#arr)"/>
+            <!-- travel time pills -->
+            <rect x="148" y="84" width="68" height="19" rx="9" fill="white" stroke="rgba(220,215,245,0.9)" stroke-width="1"/>
+            <text x="182" y="97" text-anchor="middle" font-size="10" fill="#888780" font-family="sans-serif">🚇 8 min</text>
+            <rect x="388" y="84" width="68" height="19" rx="9" fill="white" stroke="rgba(220,215,245,0.9)" stroke-width="1"/>
+            <text x="422" y="97" text-anchor="middle" font-size="10" fill="#888780" font-family="sans-serif">🚶 12 min</text>
+            <rect x="612" y="84" width="68" height="19" rx="9" fill="white" stroke="rgba(220,215,245,0.9)" stroke-width="1"/>
+            <text x="646" y="97" text-anchor="middle" font-size="10" fill="#888780" font-family="sans-serif">🚇 6 min</text>
+            <!-- stop 1 -->
+            <g transform="translate(62,95)">
+              <circle r="30" fill="#FAEEDA" stroke="#FAC775" stroke-width="1.5"/>
+              <text y="-10" text-anchor="middle" font-size="18">🏛</text>
+              <text y="6" text-anchor="middle" font-size="9" fill="#633806" font-family="sans-serif" font-weight="500">The Bund</text>
+              <text y="17" text-anchor="middle" font-size="8" fill="#BA7517" font-family="sans-serif">09:00</text>
+            </g>
+            <circle cx="83" cy="65" r="9" fill="#BA7517"/>
+            <text x="83" y="69" text-anchor="middle" font-size="10" fill="white" font-family="sans-serif" font-weight="500">1</text>
+            <!-- stop 2 -->
+            <g transform="translate(298,95)">
+              <circle r="30" fill="#FAECE7" stroke="#F0997B" stroke-width="1.5"/>
+              <text y="-10" text-anchor="middle" font-size="18">🌿</text>
+              <text y="6" text-anchor="middle" font-size="9" fill="#712B13" font-family="sans-serif" font-weight="500">Yu Garden</text>
+              <text y="17" text-anchor="middle" font-size="8" fill="#D85A30" font-family="sans-serif">10:00</text>
+            </g>
+            <circle cx="319" cy="65" r="9" fill="#D85A30"/>
+            <text x="319" y="69" text-anchor="middle" font-size="10" fill="white" font-family="sans-serif" font-weight="500">2</text>
+            <!-- stop 3 -->
+            <g transform="translate(538,95)">
+              <circle r="30" fill="#FBEAF0" stroke="#ED93B1" stroke-width="1.5"/>
+              <text y="-10" text-anchor="middle" font-size="18">🏺</text>
+              <text y="6" text-anchor="middle" font-size="9" fill="#72243E" font-family="sans-serif" font-weight="500">SH Museum</text>
+              <text y="17" text-anchor="middle" font-size="8" fill="#D4537E" font-family="sans-serif">11:30</text>
+            </g>
+            <circle cx="559" cy="65" r="9" fill="#D4537E"/>
+            <text x="559" y="69" text-anchor="middle" font-size="10" fill="white" font-family="sans-serif" font-weight="500">3</text>
+            <!-- stop 4 -->
+            <g transform="translate(758,95)">
+              <circle r="30" fill="#EEEDFE" stroke="#AFA9EC" stroke-width="1.5"/>
+              <text y="-10" text-anchor="middle" font-size="18">🍜</text>
+              <text y="6" text-anchor="middle" font-size="9" fill="#3C3489" font-family="sans-serif" font-weight="500">Xintiandi</text>
+              <text y="17" text-anchor="middle" font-size="8" fill="#7F77DD" font-family="sans-serif">13:30</text>
+            </g>
+            <circle cx="779" cy="65" r="9" fill="#7F77DD"/>
+            <text x="779" y="69" text-anchor="middle" font-size="10" fill="white" font-family="sans-serif" font-weight="500">4</text>
+            <!-- bottom bar -->
+            <rect x="20" y="162" width="780" height="20" rx="10" fill="rgba(234,232,250,0.4)" stroke="rgba(175,169,236,0.2)" stroke-width="1"/>
+            <rect x="20" y="162" width="292" height="20" rx="10" fill="rgba(175,169,236,0.2)"/>
+            <text x="410" y="176" text-anchor="middle" font-size="10" fill="#888780" font-family="sans-serif">Total: ~3.4 km · ~26 min transit · 5 hrs</text>
+          </svg>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+      <div>
+        <div class="rp-label">Agent tip</div>
+        <div class="tip-card"><strong>Crowds:</strong> The Bund fills up fast — aim to arrive by 9am. On weekends, Yu Garden hits capacity by 10:30am, so head there directly after the Bund with minimal lingering.</div>
+      </div>
+      <div>
+        <div class="rp-label">Weather</div>
+        <div class="tip-card"><strong>This Saturday:</strong> Partly cloudy, 24°C. Light showers possible after 15:00 — pack a compact umbrella. Morning light will be soft and ideal for photos at the Bund.</div>
+      </div>
+      <div>
+        <div class="rp-label">Getting around</div>
+        <div class="tip-card"><strong>Metro tip:</strong> All three transit legs use lines 1 and 2. A single-journey card costs ¥3–4 per leg. Alternatively buy a day pass for ¥18 if you plan extra stops.</div>
+      </div>
+      <div>
+        <div class="rp-label">Food & budget</div>
+        <div class="tip-card"><strong>Budget breakdown:</strong> Yu Garden entry ¥40/pp · Museum free · Xintiandi lunch ¥60–80/pp · Metro ¥10–12 total. Total est. ¥110–130/pp for the half-day.</div>
+      </div>
+      <div>
+        <div class="rp-label">Pro tip</div>
+        <div class="tip-card"><strong>Queue hack:</strong> Enter Yu Garden from the Chenghuang Temple south gate — it's 10 minutes longer on foot but typically has no queue, while the main gate can be 30+ minutes on weekends.</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- BOTTOM PANEL -->
+  <div class="bottom-panel">
+    <div class="prefs-strip">
+      <div class="pref-dd" id="dd-i">
+        <button class="pref-trig" id="btn-i" onclick="toggleDD('i')">
+          <i class="ti ti-sparkles" style="font-size:12px" aria-hidden="true"></i> Interests
+          <span id="i-cnt" style="background:#AFA9EC;color:#fff;border-radius:999px;font-size:10px;padding:0 5px;margin-left:1px;">3</span>
+          <i class="ti ti-chevron-down chev" aria-hidden="true"></i>
+        </button>
+        <div class="pref-panel" id="panel-i">
+          <div class="pp-label">Select your interests</div>
+          <div class="igrid" id="igrid">
+            <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-tools-kitchen-2" aria-hidden="true"></i><span>Food</span></div>
+            <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-building-castle" aria-hidden="true"></i><span>History</span></div>
+            <div class="int-chip" onclick="togInt(this)"><i class="ti ti-shopping-bag" aria-hidden="true"></i><span>Shopping</span></div>
+            <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-palette" aria-hidden="true"></i><span>Art</span></div>
+            <div class="int-chip" onclick="togInt(this)"><i class="ti ti-trees" aria-hidden="true"></i><span>Nature</span></div>
+            <div class="int-chip" onclick="togInt(this)"><i class="ti ti-moon-stars" aria-hidden="true"></i><span>Nightlife</span></div>
+            <div class="int-chip" onclick="togInt(this)"><i class="ti ti-binoculars" aria-hidden="true"></i><span>Sightseeing</span></div>
+            <div class="int-chip" onclick="togInt(this)"><i class="ti ti-run" aria-hidden="true"></i><span>Sports</span></div>
+            <div class="int-chip" onclick="togInt(this)"><i class="ti ti-kayak" aria-hidden="true"></i><span>Activity</span></div>
+            <div class="int-chip" onclick="togInt(this)"><i class="ti ti-camera" aria-hidden="true"></i><span>Photography</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="psep"></div>
+      <div class="pref-dd" id="dd-p">
+        <button class="pref-trig" id="btn-p" onclick="toggleDD('p')">
+          <i class="ti ti-gauge" style="font-size:12px" aria-hidden="true"></i> Pace: <span id="p-lbl" style="margin-left:2px;">Balanced</span>
+          <i class="ti ti-chevron-down chev" aria-hidden="true"></i>
+        </button>
+        <div class="pref-panel" id="panel-p">
+          <div class="pp-label">Select travel pace</div>
+          <div class="pace-row">
+            <div class="pace-chip" onclick="setPace(this,'Relaxed')"><i class="ti ti-coffee" aria-hidden="true"></i><span>Relaxed</span></div>
+            <div class="pace-chip on" onclick="setPace(this,'Balanced')"><i class="ti ti-walk" aria-hidden="true"></i><span>Balanced</span></div>
+            <div class="pace-chip" onclick="setPace(this,'Packed')"><i class="ti ti-bolt" aria-hidden="true"></i><span>Packed</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="psep"></div>
+      <button class="regen-btn" onclick="sendPrompt('Regenerate the Shanghai weekend route with current preferences.')">
+        <i class="ti ti-refresh" aria-hidden="true"></i> Regenerate ↗
+      </button>
+    </div>
+    <div class="input-row">
+      <input class="chat-input" type="text" placeholder='Adjust the route… e.g. "replace the museum with a street art walk in M50"'/>
+      <button class="send-btn" aria-label="Send message"><i class="ti ti-send" aria-hidden="true"></i></button>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+function toggleDD(id){
+  ['i','p'].forEach(function(k){
+    var p=document.getElementById('panel-'+k),b=document.getElementById('btn-'+k);
+    if(k===id){var o=p.classList.contains('open');p.classList.toggle('open',!o);b.classList.toggle('open',!o);}
+    else{p.classList.remove('open');b.classList.remove('open');}
+  });
+}
+function togInt(el){
+  el.classList.toggle('on');
+  document.getElementById('i-cnt').textContent=document.querySelectorAll('#igrid .int-chip.on').length;
+}
+function setPace(el,label){
+  el.parentElement.querySelectorAll('.pace-chip').forEach(function(c){c.classList.remove('on');});
+  el.classList.add('on');
+  document.getElementById('p-lbl').textContent=label;
+}
+function toggleT(btnId,popId){
+  var btn=document.getElementById(btnId),pop=document.getElementById(popId);
+  var isOpen=pop.classList.contains('open');
+  document.querySelectorAll('.transport-popup').forEach(function(p){p.classList.remove('open');});
+  document.querySelectorAll('.transit-pill').forEach(function(b){b.classList.remove('open');});
+  if(!isOpen){pop.classList.add('open');btn.classList.add('open');}
+}
+function selT(e,btnId,popId,icon,label){
+  e.stopPropagation();
+  document.getElementById(popId).querySelectorAll('.tp-opt').forEach(function(o){o.classList.remove('sel');});
+  e.currentTarget.classList.add('sel');
+  var btn=document.getElementById(btnId);
+  btn.querySelector('i.t-icon').className='ti '+icon+' t-icon';
+  document.getElementById(btnId+'-lbl').textContent=label;
+  document.getElementById(popId).classList.remove('open');
+  btn.classList.remove('open');
+}
+function runTask(id,prompt){
+  var btn=document.getElementById(id);
+  btn.className='task-btn running';
+  btn.innerHTML='<i class="ti ti-loader" aria-hidden="true"></i> Running…';
+  btn.onclick=null;
+  setTimeout(function(){
+    btn.className='task-btn done';
+    btn.innerHTML='<i class="ti ti-check" aria-hidden="true"></i> Done';
+    sendPrompt(prompt);
+  },1000);
+}
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.transit-pill')&&!e.target.closest('.transport-popup')){
+    document.querySelectorAll('.transport-popup').forEach(function(p){p.classList.remove('open');});
+    document.querySelectorAll('.transit-pill').forEach(function(b){b.classList.remove('open');});
+  }
+  if(!e.target.closest('.pref-dd')){
+    ['i','p'].forEach(function(k){
+      document.getElementById('panel-'+k).classList.remove('open');
+      document.getElementById('btn-'+k).classList.remove('open');
+    });
+  }
+});
+</script>

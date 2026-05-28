@@ -1,0 +1,1040 @@
+# app_api.py
+import asyncio
+import uuid
+import re
+import time
+import copy
+import hashlib
+import urllib.request
+import urllib.error
+from concurrent.futures import ThreadPoolExecutor
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse, FileResponse, Response
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from typing import Optional
+import agent_workflow_improved as agent_workflow
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# ✅ 只有 static 目录存在才挂载
+import os
+if os.path.exists("static"):
+    app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# ✅ 全局 session 存储
+session_store: dict = {}
+session_locks: dict = {}
+plan_result_cache: dict = {}
+SESSION_TTL_SECONDS = int(os.getenv("SESSION_TTL_SECONDS", "3600"))
+GLOBAL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("AGENT_WORKERS", "4")))
+PLAN_TIME_LIMIT_SECONDS = float(os.getenv("PLAN_TIME_LIMIT_SECONDS", "30"))
+PLAN_CACHE_TTL_SECONDS = int(os.getenv("PLAN_CACHE_TTL_SECONDS", "600"))
+PLAN_CACHE_MAX_ITEMS = int(os.getenv("PLAN_CACHE_MAX_ITEMS", "32"))
+
+
+def now_ts() -> float:
+    return time.time()
+
+
+def cleanup_sessions() -> None:
+    cutoff = now_ts() - SESSION_TTL_SECONDS
+    expired = [
+        session_id for session_id, state in session_store.items()
+        if float((state or {}).get("__updated_at", now_ts())) < cutoff
+    ]
+    for session_id in expired:
+        session_store.pop(session_id, None)
+        session_locks.pop(session_id, None)
+
+    cache_cutoff = now_ts() - PLAN_CACHE_TTL_SECONDS
+    for key, item in list(plan_result_cache.items()):
+        if float(item.get("created_at", 0)) < cache_cutoff:
+            plan_result_cache.pop(key, None)
+
+
+def make_plan_cache_key(state: dict) -> str:
+    relevant = {
+        "user_input": state.get("user_input", ""),
+        "collected_info": state.get("collected_info") or {},
+        "adjustment_modes": state.get("adjustment_modes") or [],
+        "locked_places": state.get("locked_places") or [],
+        "fixed_departure": state.get("fixed_departure") or (state.get("collected_info") or {}).get("fixed_departure") or "",
+        "fixed_destination": state.get("fixed_destination") or (state.get("collected_info") or {}).get("fixed_destination") or "",
+        "center_anchor": (state.get("collected_info") or {}).get("center_anchor") or "",
+        "avoid_places": state.get("avoid_places") or [],
+        "route_variant_seed": state.get("route_variant_seed") or "",
+    }
+    raw = repr(relevant).encode("utf-8", errors="ignore")
+    return hashlib.sha256(raw).hexdigest()
+
+
+def should_vary_route(state: dict, latest_text: str = "") -> bool:
+    """Enable controlled route variation only for open-ended route requests."""
+    if os.getenv("ENABLE_ROUTE_VARIATION", "1") != "1":
+        return False
+    text = f"{state.get('user_input', '')} {latest_text or ''}"
+    open_terms = [
+        "你看着办",
+        "随便",
+        "随机",
+        "都行",
+        "附近",
+        "周边",
+        "推荐",
+        "安排",
+        "换一个",
+        "换条路线",
+        "再来一个",
+        "不满意",
+    ]
+    if any(term in text for term in open_terms):
+        return True
+    # If the user did not lock an explicit place, small variation is acceptable.
+    return not bool(state.get("locked_places"))
+
+
+def get_cached_plan(cache_key: str) -> Optional[dict]:
+    item = plan_result_cache.get(cache_key)
+    if not item:
+        return None
+    if now_ts() - float(item.get("created_at", 0)) > PLAN_CACHE_TTL_SECONDS:
+        plan_result_cache.pop(cache_key, None)
+        return None
+    cached = copy.deepcopy(item.get("result") or {})
+    cached["cache_hit"] = True
+    return cached
+
+
+def set_cached_plan(cache_key: str, result: dict) -> None:
+    if not cache_key or not result:
+        return
+    while len(plan_result_cache) >= PLAN_CACHE_MAX_ITEMS:
+        oldest_key = min(plan_result_cache, key=lambda key: plan_result_cache[key].get("created_at", 0))
+        plan_result_cache.pop(oldest_key, None)
+    cached_result = copy.deepcopy(result)
+    for runtime_key in ["__events", "__next_event_id", "__updated_at"]:
+        cached_result.pop(runtime_key, None)
+    plan_result_cache[cache_key] = {
+        "created_at": now_ts(),
+        "result": cached_result,
+    }
+
+
+def log_generation_time(session_id: str, elapsed: float, stage: str, cache_hit: bool = False) -> None:
+    marker = "✅" if elapsed <= PLAN_TIME_LIMIT_SECONDS else "⚠️"
+    cache_text = "，命中缓存" if cache_hit else ""
+    print(f"{marker} 方案耗时统计 [{session_id}] {stage}: {elapsed:.2f}s / 限制 {PLAN_TIME_LIMIT_SECONDS:.0f}s{cache_text}")
+    if elapsed > PLAN_TIME_LIMIT_SECONDS:
+        print(
+            "⚠️ 已超过30秒目标。优先优化项：降低LLM输出长度、减少高德逐段请求、复用RAG/高德缓存、"
+            "开启本地plan_result_cache；多人/线上部署时再考虑Redis共享缓存。"
+        )
+
+
+def save_session(session_id: str, state: dict) -> None:
+    previous = session_store.get(session_id) or {}
+    if "__events" in previous and "__events" not in state:
+        state["__events"] = previous.get("__events", [])
+    if "__next_event_id" in previous and "__next_event_id" not in state:
+        state["__next_event_id"] = previous.get("__next_event_id", 1)
+    state["__updated_at"] = now_ts()
+    session_store[session_id] = state
+
+
+def normalize_room_id(room_id: Optional[str]) -> Optional[str]:
+    room = re.sub(r"[^a-zA-Z0-9_-]", "", str(room_id or "").strip())
+    if not room:
+        return None
+    return f"room:{room[:40]}"
+
+
+def get_session_lock(session_id: str) -> asyncio.Lock:
+    lock = session_locks.get(session_id)
+    if lock is None:
+        lock = asyncio.Lock()
+        session_locks[session_id] = lock
+    return lock
+
+
+def append_event(session_id: str, role: str, text: str, client_id: str = "", speaker: str = "", payload: Optional[dict] = None) -> None:
+    state = session_store.get(session_id)
+    if state is None:
+        state = {}
+    events = state.setdefault("__events", [])
+    next_id = int(state.get("__next_event_id", 1) or 1)
+    events.append({
+        "id": next_id,
+        "ts": now_ts(),
+        "role": role,
+        "text": text or "",
+        "client_id": client_id or "",
+        "speaker": speaker or "",
+        "payload": payload or {},
+    })
+    state["__next_event_id"] = next_id + 1
+    state["__events"] = events[-200:]
+    save_session(session_id, state)
+
+
+def response_text(payload: dict) -> str:
+    for key in ["plan", "question", "message", "order_result", "error"]:
+        if payload.get(key):
+            return str(payload.get(key))
+    return str(payload.get("status", ""))
+
+
+def json_event_response(session_id: str, payload: dict, client_id: str = "") -> JSONResponse:
+    append_event(
+        session_id,
+        "bot",
+        response_text(payload),
+        client_id=client_id,
+        payload={k: v for k, v in payload.items() if k not in {"plan", "route_map"}},
+    )
+    payload["last_event_id"] = int((session_store.get(session_id) or {}).get("__next_event_id", 1)) - 1
+    return JSONResponse(payload)
+
+
+def public_route_map(route_map: dict) -> dict:
+    public = dict(route_map or {})
+    public.pop("amap_url", None)
+    return public
+
+
+class PlanRequest(BaseModel):
+    user_input: str
+    session_id: Optional[str] = None
+    room_id: Optional[str] = None
+    client_id: Optional[str] = None
+    speaker: Optional[str] = None
+    enable_group_discussion: Optional[bool] = False
+
+
+class ConfirmRequest(BaseModel):
+    session_id: str
+    confirmed: bool
+
+
+class CouponReserveRequest(BaseModel):
+    session_id: str
+    place_name: str
+
+
+class PlaceReserveRequest(BaseModel):
+    session_id: str
+    place_name: str
+
+
+def is_satisfied_feedback(text: str) -> bool:
+    """判断用户是否明确满意。保守处理：包含不满意/修改诉求时不算满意。"""
+    normalized = (text or "").strip().lower()
+    negative_patterns = [
+        "不满意", "不太满意", "不行", "不好", "不喜欢", "换", "重新",
+        "调整", "修改", "太远", "太贵", "太累", "不要", "还有", "但是",
+        "能不能", "可以再", "希望", "想要", "不合适"
+    ]
+    positive_patterns = [
+        "满意", "可以", "挺好", "很好", "好", "ok", "okay", "没问题",
+        "就这个", "确认", "不错", "行"
+    ]
+    has_negative = any(p in normalized for p in negative_patterns)
+    has_positive = any(p in normalized for p in positive_patterns)
+    return has_positive and not has_negative
+
+
+def is_departure_confirm_text(text: str) -> bool:
+    normalized = (text or "").strip().lower().replace(" ", "")
+    patterns = ["那就出发", "就出发", "出发", "就这样", "就这样吧", "可以了", "确认出发", "冲", "走吧"]
+    return any(pattern in normalized for pattern in patterns)
+
+
+def build_revision_input(previous_input: str, feedback: str) -> str:
+    return (
+        f"{previous_input}\n"
+        f"用户对上一版方案不满意，新的反馈或补充需求是：{feedback}\n"
+        "请根据用户反馈重新调整方案，避免重复上一版不满意的点。"
+    )
+
+
+def structured_schedule_places(state: dict) -> list[str]:
+    structured = state.get("structured_plan") or {}
+    places = []
+    for item in structured.get("schedule") or []:
+        place = str(item.get("place") or "").strip()
+        if place:
+            places.append(place)
+    for place in structured.get("places") or []:
+        if isinstance(place, str) and place.strip():
+            places.append(place.strip())
+    return list(dict.fromkeys(places))
+
+
+def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
+    """缓存用户明确点名的核心地点，并锁定明确起点/终点。
+
+    重新生成、换近一点、换便宜一点等反馈只允许改中间站；除非用户明确
+    说“出发地/目的地换成……”，否则不改已确认的起点和终点。
+    """
+    locked = list(state.get("locked_places") or [])
+    intent = state.get("intent") or {}
+    collected = state.get("collected_info") or {}
+    candidate = str(intent.get("location") or collected.get("location") or "").strip()
+    user_text = f"{state.get('user_input', '')} {latest_text or ''}"
+
+    departure = str(collected.get("departure") or intent.get("departure") or "").strip()
+    if departure and collected.get("_departure_explicit"):
+        state["fixed_departure"] = departure
+        collected["fixed_departure"] = departure
+        collected["center_anchor"] = collected.get("center_anchor") or departure
+
+    destination = str(collected.get("location") or intent.get("location") or "").strip()
+    if destination and collected.get("_location_explicit") and agent_workflow.is_concrete_location_anchor(destination):
+        state["fixed_destination"] = destination
+        collected["fixed_destination"] = destination
+        collected["center_anchor"] = destination
+        if destination not in locked:
+            locked.append(destination)
+
+    user_mentioned_candidate = bool(candidate) and agent_workflow.place_matches_text(candidate, user_text)
+    if (
+        candidate
+        and candidate != "待确认地点"
+        and intent.get("explicit_place_match") is True
+        and user_mentioned_candidate
+    ):
+        if candidate not in locked:
+            locked.append(candidate)
+
+    text = str(latest_text or "")
+    kept = []
+    persistent_anchor_keys = {agent_workflow.normalize_place_text(p) for p in [
+        collected.get("fixed_departure"), collected.get("fixed_destination"), collected.get("center_anchor")
+    ] if p}
+    for place in locked:
+        place_key = agent_workflow.normalize_place_text(place)
+        if place_key not in persistent_anchor_keys and not agent_workflow.place_matches_text(place, user_text) and not agent_workflow.same_route_place(place, destination):
+            continue
+        revoke_patterns = [
+            f"不想去{place}", f"不要{place}", f"换掉{place}", f"不去{place}", f"{place}不要了",
+            f"{place}换掉", f"{place}不去了",
+        ]
+        if any(pattern in text for pattern in revoke_patterns):
+            continue
+        kept.append(place)
+    state["locked_places"] = list(dict.fromkeys(kept))
+    state["collected_info"] = collected
+    return state
+
+
+QUICK_ADJUSTMENT_MAP = {
+    "换近一点": "nearer",
+    "换便宜一点": "cheaper",
+    "换成室内": "indoor",
+    "换室内": "indoor",
+    "优先有团购": "coupon",
+    "少走路": "less_walk",
+}
+
+
+def detect_quick_adjustments(text: str) -> list[str]:
+    normalized = (text or "").strip().replace(" ", "")
+    modes = []
+    for label, mode in QUICK_ADJUSTMENT_MAP.items():
+        if label.replace(" ", "") in normalized and mode not in modes:
+            modes.append(mode)
+    synonym_rules = [
+        ("nearer", ["近一点", "距离近", "别太远", "更近", "附近"]),
+        ("cheaper", ["便宜", "预算低", "省钱", "低价", "更划算"]),
+        ("indoor", ["室内", "不要露天", "别晒", "避雨", "商场"]),
+        ("coupon", ["团购", "优惠券", "有券", "满减"]),
+        ("less_walk", ["少走路", "不想走", "别走太多", "少步行"]),
+    ]
+    for mode, words in synonym_rules:
+        if mode not in modes and any(word in normalized for word in words):
+            modes.append(mode)
+    return modes
+
+
+def wants_group_discussion(text: str) -> bool:
+    normalized = (text or "").strip().replace(" ", "")
+    patterns = ["开启多人", "多人偏好", "多人讨论", "一起讨论", "让大家说", "收集大家", "收集偏好"]
+    return any(pattern in normalized for pattern in patterns)
+
+
+def build_quick_revision_input(previous_input: str, modes: list[str]) -> str:
+    descriptions = {
+        "nearer": "请换近一点：所有相邻地点之间的距离都要缩短，优先选择同一区域或高德附近 POI，不只改一个点。",
+        "cheaper": "请换便宜一点：降低门票/活动/餐饮预算，必要时替换为更便宜的饭店或活动，并同时考虑距离。",
+        "indoor": "请换成室内：整条路线所有地点都必须是室内，剔除公园、街道、滨江步道等露天地点。",
+        "coupon": "请优先有团购：吃饭或活动地点必须优先选择有团购券的地点，没有券的地点要替换；如果确实没有可用券，明确说明。",
+        "less_walk": "请少走路：尽量减少步行，控制站点数量，交通建议优先地铁、骑行、打车，不安排长距离步行串联。",
+    }
+    requirement_text = "\n".join(f"- {descriptions.get(mode, mode)}" for mode in modes)
+    return (
+        f"{previous_input}\n"
+        f"用户提出了以下快捷调整要求：\n{requirement_text}\n"
+        "请基于上一版方案重新生成，必须同时满足这些调整，不要只处理其中一个，也不要原样复述上一版。"
+    )
+
+
+def safe_int(value, default: int = 1) -> int:
+    chinese_numbers = {"一": 1, "二": 2, "两": 2, "俩": 2, "三": 3, "四": 4, "五": 5, "六": 6, "七": 7, "八": 8, "九": 9, "十": 10}
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        text = str(value or "")
+        match = re.search(r"\d+", text)
+        if match:
+            return int(match.group())
+        match = re.search(r"([一二两俩三四五六七八九十])\s*(?:个)?人?", text)
+        if match:
+            return chinese_numbers.get(match.group(1), default)
+        return default
+
+
+def discussion_member_label(index: int) -> str:
+    labels = ["A", "B", "C", "D", "E", "F"]
+    return labels[index] if index < len(labels) else f"成员{index + 1}"
+
+
+def discussion_member_options(count: int) -> list[str]:
+    count = max(2, min(int(count or 2), 5))
+    return [discussion_member_label(index) for index in range(count)]
+
+
+def need_group_discussion(state: dict, enabled: bool = False) -> bool:
+    """用户勾选多人讨论时，两人及以上启动 A/B/C/D/E 身份收集。"""
+    if not enabled:
+        return False
+    collected = state.get("collected_info") or {}
+    return safe_int(collected.get("num_people"), 1) >= 2
+
+
+def is_group_decision_text(text: str) -> bool:
+    normalized = (text or "").strip().lower().replace(" ", "")
+    decision_patterns = [
+        "让agent决定", "让ai决定", "让你决定", "你来决定", "你决定吧",
+        "agent决定", "就这样吧", "就这样", "可以生成", "开始生成",
+        "决定吧", "定了", "按这个来", "让系统决定"
+    ]
+    return any(pattern in normalized for pattern in decision_patterns)
+
+
+def build_group_discussion_summary(discussion: dict) -> str:
+    members = discussion.get("members") or []
+    notes = discussion.get("notes") or []
+    lines = ["多人讨论记录："]
+    for member in members:
+        lines.append(f"- {member.get('label')}: {member.get('preference')}")
+    for note in notes:
+        lines.append(f"- 补充讨论: {note}")
+    lines.append("请综合所有成员需求，兼顾预算、4-6小时总时长、路线距离、天气和团购券。")
+    return "\n".join(lines)
+
+
+def start_group_discussion_if_needed(state: dict, session_id: str, enabled: bool = False, force_new: bool = False, client_id: str = ""):
+    if not need_group_discussion(state, enabled):
+        return None
+    discussion = state.get("group_discussion") or {}
+    if discussion.get("complete") and not force_new:
+        return None
+    if discussion.get("active"):
+        return None
+
+    count = max(2, min(safe_int((state.get("collected_info") or {}).get("num_people"), 2), 5))
+    discussion = {
+        "active": True,
+        "complete": False,
+        "required_count": count,
+        "current_index": 0,
+        "members": [],
+        "notes": [],
+    }
+    state["group_discussion"] = discussion
+    save_session(session_id, state)
+    label = discussion_member_label(0)
+    payload = {
+        "status": "need_group_discussion",
+        "session_id": session_id,
+        "member_options": discussion_member_options(count),
+        "question": (
+            f"已进入多人讨论模式。请先在输入框左侧选择{label}身份，然后说一下自己的偏好：想玩什么、不能接受什么、"
+            "预算或距离上有什么要求？"
+        )
+    }
+    return json_event_response(session_id, payload, client_id)
+
+
+def next_missing_member_label(discussion: dict) -> Optional[str]:
+    required_count = int(discussion.get("required_count") or 0)
+    existing = {member.get("label") for member in discussion.get("members") or []}
+    for index in range(required_count):
+        label = discussion_member_label(index)
+        if label not in existing:
+            return label
+    return None
+
+
+def upsert_member_preference(discussion: dict, label: str, text: str):
+    members = discussion.setdefault("members", [])
+    for member in members:
+        if member.get("label") == label:
+            member["preference"] = text.strip()
+            return
+    members.append({"label": label, "preference": text.strip()})
+
+
+def handle_group_discussion_input(state: dict, session_id: str, user_text: str, speaker: Optional[str] = None, client_id: str = ""):
+    discussion = state.get("group_discussion") or {}
+    if not discussion.get("active") or discussion.get("complete"):
+        return None
+
+    required_count = int(discussion.get("required_count") or 0)
+    valid_labels = {discussion_member_label(i) for i in range(required_count)}
+    speaker = (speaker or "").strip().upper()
+
+    if len(discussion.get("members") or []) < required_count:
+        label = speaker if speaker in valid_labels else next_missing_member_label(discussion)
+        if not label:
+            label = discussion_member_label(len(discussion.get("members") or []))
+        upsert_member_preference(discussion, label, user_text)
+        discussion["current_index"] = min(len(discussion.get("members") or []), required_count)
+        state["group_discussion"] = discussion
+
+        next_label = next_missing_member_label(discussion)
+        if next_label:
+            save_session(session_id, state)
+            payload = {
+                "status": "need_group_discussion",
+                "session_id": session_id,
+                "member_options": discussion_member_options(required_count),
+                "question": f"已记录{label}的需求。现在请{next_label}选择自己的身份并说一下偏好和限制。"
+            }
+            return json_event_response(session_id, payload, client_id)
+
+        save_session(session_id, state)
+        payload = {
+            "status": "need_group_discussion",
+            "session_id": session_id,
+            "member_options": discussion_member_options(required_count),
+            "question": (
+                "所有成员的基础偏好都记录好了。你们可以继续补充讨论，例如谁更看重距离、预算、室内外、吃饭。"
+                "如果讨论结束，请回复“让Agent决定”或“就这样吧”，我再综合大家需求生成方案。"
+            )
+        }
+        return json_event_response(session_id, payload, client_id)
+
+    if is_group_decision_text(user_text):
+        discussion["complete"] = True
+        discussion["active"] = False
+        state["group_discussion"] = discussion
+        state["user_input"] = (
+            f"{state.get('user_input', '')}\n"
+            f"{build_group_discussion_summary(discussion)}\n"
+            f"用户已确认讨论结束：{user_text}"
+        )
+        return None
+
+    discussion.setdefault("notes", []).append(user_text.strip())
+    state["group_discussion"] = discussion
+    save_session(session_id, state)
+    payload = {
+        "status": "need_group_discussion",
+        "session_id": session_id,
+        "member_options": discussion_member_options(required_count),
+        "question": (
+            "已记录这条补充意见。还可以继续讨论；如果希望我开始权衡大家需求并生成方案，"
+            "请回复“让Agent决定”或“就这样吧”。"
+        )
+    }
+    return json_event_response(session_id, payload, client_id)
+
+
+@app.on_event("startup")
+async def startup():
+    agent_workflow.init_models()
+    agent_workflow.init_workflows()
+
+
+@app.on_event("shutdown")
+async def shutdown():
+    GLOBAL_EXECUTOR.shutdown(wait=False, cancel_futures=True)
+
+
+# ✅ 首页直接返回新版 V8 live 前端
+@app.get("/")
+async def index():
+    return FileResponse(
+        "shanghai_agent_1440_v8_live.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/classic")
+async def index_classic():
+    """保留旧版聊天前端入口，避免原页面功能丢失。"""
+    return FileResponse(
+        "index.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/v8")
+async def index_v8():
+    """兼容旧链接：新版 V8 风格前端。"""
+    return FileResponse(
+        "shanghai_agent_1440_v8_live.html",
+        headers={
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
+    )
+
+
+@app.get("/session/{session_id}")
+async def get_session_state(session_id: str):
+    """给多端共享链接做轻量状态读取；不包含完整内部链路。"""
+    cleanup_sessions()
+    state = session_store.get(session_id)
+    if not state:
+        return JSONResponse({"exists": False, "session_id": session_id})
+    return JSONResponse({
+        "exists": True,
+        "session_id": session_id,
+        "ended": bool(state.get("__ended")),
+        "awaiting_satisfaction": bool(state.get("awaiting_satisfaction")),
+        "group_discussion": state.get("group_discussion") or {},
+        "structured_plan": state.get("structured_plan") or {},
+        "validation_report": state.get("validation_report") or {},
+        "final_plan": state.get("final_plan") or "",
+    })
+
+
+@app.get("/events/{session_id}")
+async def get_session_events(session_id: str, since: int = 0):
+    """多端协作轮询事件流。客户端每隔1-2秒按 last_event_id 拉取增量。"""
+    cleanup_sessions()
+    state = session_store.get(session_id)
+    if not state:
+        return JSONResponse({"exists": False, "session_id": session_id, "events": [], "last_event_id": since})
+    events = [
+        event for event in (state.get("__events") or [])
+        if int(event.get("id", 0)) > int(since or 0)
+    ]
+    last_event_id = int(state.get("__next_event_id", 1)) - 1
+    return JSONResponse({
+        "exists": True,
+        "session_id": session_id,
+        "ended": bool(state.get("__ended")),
+        "events": events,
+        "last_event_id": last_event_id,
+    })
+
+
+@app.get("/route_map/{session_id}")
+async def route_map(session_id: str):
+    """Proxy Amap static map image so the frontend does not expose the API key."""
+    started = time.perf_counter()
+    cleanup_sessions()
+    state = session_store.get(session_id)
+    route_map_info = (state or {}).get("route_map") or {}
+    if route_map_info.get("available") and not route_map_info.get("amap_url"):
+        route_map_info = agent_workflow.build_route_map_info((state or {}).get("structured_plan") or {})
+        if state is not None:
+            state["route_map"] = route_map_info
+            save_session(session_id, state)
+    amap_url = route_map_info.get("amap_url")
+    if not amap_url:
+        return JSONResponse({"error": route_map_info.get("reason") or "当前会话没有可用路线地图"}, status_code=404)
+    try:
+        with urllib.request.urlopen(amap_url, timeout=10) as resp:
+            content = resp.read()
+            content_type = resp.headers.get("Content-Type") or "image/png"
+        print(f"⏱️ 地图接口耗时 [{session_id}]: {time.perf_counter() - started:.2f}s")
+        return Response(content=content, media_type=content_type)
+    except (urllib.error.URLError, TimeoutError) as exc:
+        return JSONResponse({"error": f"路线地图获取失败: {exc}"}, status_code=502)
+
+
+@app.post("/plan")
+async def plan(req: PlanRequest):
+    cleanup_sessions()
+    session_id = req.session_id or normalize_room_id(req.room_id) or str(uuid.uuid4())
+    async with get_session_lock(session_id):
+        return await _plan_impl(req, session_id)
+
+
+async def _plan_impl(req: PlanRequest, session_id: str):
+    """
+    规划接口，支持多轮信息收集：
+    - status="need_info"  → 信息不完整，前端展示 question 等待用户补充
+    - status="plan_ready" → 规划完成，前端展示 plan
+    """
+    cleanup_sessions()
+    request_started_at = time.perf_counter()
+    # ── Step 1: 恢复或初始化 session ──────────────────────────
+
+    if session_id and session_id in session_store:
+        # 多轮对话：追加用户新输入到历史输入
+        state = dict(session_store[session_id])
+        state["latest_user_input"] = req.user_input
+        state = update_locked_places_from_state(state, req.user_input)
+        save_session(session_id, state)
+        append_event(session_id, "user", req.user_input, client_id=req.client_id or "", speaker=req.speaker or "")
+        print(f"🔄 Session [{session_id}] 继续对话")
+
+        if state.get("awaiting_departure_confirmation"):
+            if is_departure_confirm_text(req.user_input):
+                state["__ended"] = True
+                state["awaiting_departure_confirmation"] = False
+                save_session(session_id, state)
+                return json_event_response(session_id, {
+                    "status": "trip_ready",
+                    "session_id": session_id,
+                    "message": "已确认预约信息。祝你们出发顺利，记得出行前再核验一次实时营业、余位和天气。"
+                }, req.client_id or "")
+            if bool(req.enable_group_discussion) or wants_group_discussion(req.user_input):
+                state["awaiting_departure_confirmation"] = False
+                discussion_response = start_group_discussion_if_needed(state, session_id, True, force_new=True, client_id=req.client_id or "")
+                if discussion_response is not None:
+                    return discussion_response
+            save_session(session_id, state)
+            return json_event_response(session_id, {
+                "status": "reservation_pending",
+                "session_id": session_id,
+                "message": (
+                    f"已收到你的补充：{req.user_input}\n"
+                    "如果需要调整方案，请告诉我具体要改哪里；如果确认出发，请回复“那就出发”或“就这样”。"
+                )
+            }, req.client_id or "")
+
+        # 方案已生成后，下一轮输入先视为满意度反馈。
+        if state.get("awaiting_satisfaction"):
+            if bool(req.enable_group_discussion) or wants_group_discussion(req.user_input):
+                state["awaiting_satisfaction"] = False
+                discussion_response = start_group_discussion_if_needed(state, session_id, True, force_new=True, client_id=req.client_id or "")
+                if discussion_response is not None:
+                    return discussion_response
+
+            if is_satisfied_feedback(req.user_input):
+                state["awaiting_satisfaction"] = False
+                state["confirmed"] = None
+                save_session(session_id, state)
+                return json_event_response(session_id, {
+                    "status": "satisfied",
+                    "session_id": session_id,
+                    "message": "好的，已记录你对当前方案满意。如需预订，请点击方案下方具体地点的预订按钮。"
+                }, req.client_id or "")
+
+            previous_places = structured_schedule_places(state)
+            if previous_places:
+                locked_keys = {
+                    agent_workflow.normalize_place_text(place)
+                    for place in (state.get("locked_places") or [])
+                }
+                avoid_candidates = [
+                    place for place in previous_places
+                    if agent_workflow.normalize_place_text(place) not in locked_keys
+                ]
+                state["avoid_places"] = list(dict.fromkeys((state.get("avoid_places") or []) + avoid_candidates))
+                state.setdefault("previous_plan_places", []).append(previous_places)
+
+            quick_modes = detect_quick_adjustments(req.user_input)
+            if quick_modes:
+                state["adjustment_modes"] = quick_modes
+                state["adjustment_mode"] = quick_modes[0]
+                state["user_input"] = build_quick_revision_input(state.get("user_input", ""), quick_modes)
+            else:
+                state["adjustment_modes"] = []
+                state["adjustment_mode"] = None
+                state["user_input"] = build_revision_input(state.get("user_input", ""), req.user_input)
+            state["final_plan"] = None
+            state["structured_plan"] = None
+            state["weather_info"] = None
+            state["route_distance_info"] = None
+            state["route_map"] = None
+            state["coupon_info"] = None
+            state["reservation_options"] = None
+            state["awaiting_satisfaction"] = False
+            state["revision_count"] = int(state.get("revision_count") or 0) + 1
+            print(f"🔁 用户不满意，开始第 {state['revision_count']} 次调整方案")
+        else:
+            discussion_response = handle_group_discussion_input(state, session_id, req.user_input, req.speaker, client_id=req.client_id or "")
+            if discussion_response is not None:
+                return discussion_response
+            if bool(req.enable_group_discussion) or wants_group_discussion(req.user_input):
+                discussion_response = start_group_discussion_if_needed(state, session_id, True, force_new=True, client_id=req.client_id or "")
+                if discussion_response is not None:
+                    return discussion_response
+            state["user_input"] = f"{state['user_input']} {req.user_input}"
+    else:
+        # 首次请求：新建 session
+        state = agent_workflow.AgentState(
+            user_input=req.user_input,
+            collected_info={},
+            info_complete=False,
+            pending_question=None,
+            intent=None,
+            weather_info=None,
+            rag_context=None,
+            attraction_info=None,
+            ticket_info=None,
+            route_plan=None,
+            route_distance_info=None,
+            route_map=None,
+            coupon_info=None,
+            structured_plan=None,
+            validation_report=None,
+            reservation_options=None,
+            exception=None,
+            final_plan=None,
+            confirmed=None,
+            order_result=None,
+            awaiting_satisfaction=False,
+            revision_count=0,
+            group_discussion=None,
+            adjustment_mode=None,
+            adjustment_modes=[],
+            avoid_places=[],
+            previous_plan_places=[],
+            locked_places=[],
+            exception_events=[],
+            latest_user_input=req.user_input,
+            fixed_departure="",
+            fixed_destination="",
+            node_timings={},
+            awaiting_departure_confirmation=False,
+            info_followup_asked=False,
+            coupon_reservations=[]
+        )
+        save_session(session_id, state)
+        append_event(session_id, "user", req.user_input, client_id=req.client_id or "", speaker=req.speaker or "")
+        print(f"🆕 新建 Session [{session_id}]")
+
+    # ── Step 2: 执行信息收集（异步非阻塞）─────────────────────
+    loop = asyncio.get_event_loop()
+    try:
+        info_started = time.perf_counter()
+        new_state = await loop.run_in_executor(
+            GLOBAL_EXECUTOR,
+            agent_workflow.collect_required_info_for_api,
+            state
+        )
+        info_elapsed = time.perf_counter() - info_started
+        print(f"⏱️ 工具调用耗时 [collect_required_info_for_api]: {info_elapsed:.2f}s")
+        new_state["latest_user_input"] = req.user_input
+        new_state = update_locked_places_from_state(new_state, req.user_input)
+    except Exception as e:
+        return JSONResponse({"error": f"信息收集失败: {str(e)}"}, status_code=500)
+
+    # ── Step 3: 信息不齐全 → 保存状态，返回追问给前端 ─────────
+    if not new_state.get("info_complete"):
+        save_session(session_id, new_state)
+        log_generation_time(session_id, time.perf_counter() - request_started_at, "need_info")
+        return json_event_response(session_id, {
+            "status": "need_info",
+            "session_id": session_id,
+            "question": new_state.get(
+                "pending_question",
+                "请补充出发地点、人数、时间和预算信息～😊"
+            )
+        }, req.client_id or "")
+
+    discussion_response = start_group_discussion_if_needed(new_state, session_id, bool(req.enable_group_discussion), client_id=req.client_id or "")
+    if discussion_response is not None:
+        return discussion_response
+
+    # ── Step 4: 信息齐全 → 执行完整规划流程 ───────────────────
+    if should_vary_route(new_state, req.user_input):
+        new_state["route_variant_seed"] = f"{session_id}:{time.time_ns()}:{uuid.uuid4().hex[:8]}"
+    else:
+        new_state.pop("route_variant_seed", None)
+
+    cache_key = make_plan_cache_key(new_state)
+    result = get_cached_plan(cache_key)
+    cache_hit = result is not None
+    try:
+        if result is None:
+            result = await loop.run_in_executor(
+                GLOBAL_EXECUTOR,
+                agent_workflow.plan_workflow.invoke,
+                new_state
+            )
+            set_cached_plan(cache_key, result)
+    except Exception as e:
+        return JSONResponse({"error": f"规划失败: {str(e)}"}, status_code=500)
+
+    generation_seconds = time.perf_counter() - request_started_at
+    log_generation_time(session_id, generation_seconds, "plan_ready", cache_hit=cache_hit)
+    result["awaiting_satisfaction"] = True
+    result["revision_count"] = int(result.get("revision_count") or new_state.get("revision_count") or 0)
+    result["generation_time_seconds"] = round(generation_seconds, 2)
+    result["generation_time_over_limit"] = generation_seconds > PLAN_TIME_LIMIT_SECONDS
+    save_session(session_id, result)
+
+    return json_event_response(session_id, {
+        "status": "plan_ready",
+        "session_id": session_id,
+        "plan": result.get("final_plan", ""),
+        "distance_info": result.get("route_distance_info", ""),
+        "structured_plan": result.get("structured_plan", {}),
+        "validation_report": result.get("validation_report", {}),
+        "coupon_info": result.get("coupon_info", {}),
+        "reservation_options": result.get("reservation_options", []),
+        "route_map": public_route_map(result.get("route_map", {})),
+        "node_timings": result.get("node_timings", {}),
+        "generation_time_seconds": result.get("generation_time_seconds"),
+        "generation_time_over_limit": result.get("generation_time_over_limit"),
+        "cache_hit": cache_hit,
+        "exception": result.get("exception"),
+        "exception_events": result.get("exception_events") or ((result.get("structured_plan") or {}).get("route_logic_validation") or {}).get("exception_events") or [],
+        "adjustment_conflicts": ((result.get("structured_plan") or {}).get("route_logic_validation") or {}).get("adjustment_conflicts") or [],
+        "satisfaction_question": "你对这个方案满意吗？如果满意请回复“满意/可以/就这个”，如果不满意请直接告诉我想怎么改，我会继续调整。"
+    }, req.client_id or "")
+
+
+@app.post("/confirm")
+async def confirm(req: ConfirmRequest):
+    """预订确认接口"""
+    cleanup_sessions()
+    state = session_store.get(req.session_id)
+    if not state:
+        return JSONResponse(
+            {"error": "Session 已过期，请重新生成方案"},
+            status_code=400
+        )
+
+    # ✅ 用户取消预订
+    if not req.confirmed:
+        state["__ended"] = True
+        save_session(req.session_id, state)
+        return json_event_response(req.session_id, {
+            "status": "cancelled",
+            "session_id": req.session_id,
+            "order_result": "已取消预订，如需重新规划请重新输入需求。"
+        })
+
+    # ✅ 用户确认预订 → 执行下单
+    state["confirmed"] = True
+    loop = asyncio.get_event_loop()
+    try:
+        result = await loop.run_in_executor(
+            GLOBAL_EXECUTOR,
+            agent_workflow.book_workflow.invoke,
+            state
+        )
+    except Exception as e:
+        return JSONResponse({"error": f"预订失败: {str(e)}"}, status_code=500)
+
+    result["__ended"] = True
+    save_session(req.session_id, result)
+    return json_event_response(req.session_id, {
+        "status": "ended",
+        "session_id": req.session_id,
+        "order_result": result.get("order_result", "预订失败，请重试")
+    })
+
+
+@app.post("/reserve_coupon")
+async def reserve_coupon(req: CouponReserveRequest):
+    """点击某张团购券后，生成该店铺/地点的详细预约信息。"""
+    cleanup_sessions()
+    state = session_store.get(req.session_id)
+    if not state:
+        return JSONResponse({"error": "Session 已过期，请重新生成方案"}, status_code=400)
+
+    allowed_items = ((state.get("coupon_info") or {}).get("items") or [])
+    allowed_lookup = {}
+    for item in allowed_items:
+        place_name = item.get("place_name")
+        display_name = item.get("display_name")
+        if place_name:
+            allowed_lookup[place_name] = place_name
+        if display_name:
+            allowed_lookup[display_name] = place_name
+    canonical_place_name = allowed_lookup.get(req.place_name)
+    if not canonical_place_name:
+        return JSONResponse({
+            "error": "该团购券不在当前最终方案中，不能预约。请重新生成方案或选择页面展示的券。"
+        }, status_code=400)
+
+    info = agent_workflow.build_reservation_info(canonical_place_name)
+    state.setdefault("coupon_reservations", []).append(info)
+    state["awaiting_departure_confirmation"] = True
+    state["awaiting_satisfaction"] = False
+    save_session(req.session_id, state)
+
+    return JSONResponse({
+        "status": "reservation_pending",
+        "session_id": req.session_id,
+        "reservation": info,
+        "message": info.get("message", "预约信息已生成，请确认是否出发。"),
+        "question": "请确认预约信息是否满意。满意请回复“那就出发”或“就这样”；不满意请说明要调整哪里。"
+    })
+
+
+@app.post("/reserve_place")
+async def reserve_place(req: PlaceReserveRequest):
+    """按最终 structured_plan 中的具体地点生成预约信息。"""
+    cleanup_sessions()
+    state = session_store.get(req.session_id)
+    if not state:
+        return JSONResponse({"error": "Session 已过期，请重新生成方案"}, status_code=400)
+
+    options = state.get("reservation_options") or agent_workflow.build_reservation_options(state.get("structured_plan") or {})
+    allowed_lookup = {}
+    for item in options:
+        place_name = item.get("place_name")
+        display_name = item.get("display_name")
+        if place_name:
+            allowed_lookup[place_name] = place_name
+        if display_name:
+            allowed_lookup[display_name] = place_name
+    canonical_place_name = allowed_lookup.get(req.place_name)
+    if not canonical_place_name:
+        return JSONResponse({
+            "error": "该地点不在当前最终方案的可预订地点中，不能预约。请重新生成方案或选择页面展示的预订按钮。"
+        }, status_code=400)
+
+    info = agent_workflow.build_reservation_info(canonical_place_name)
+    state.setdefault("coupon_reservations", []).append(info)
+    state["awaiting_departure_confirmation"] = True
+    state["awaiting_satisfaction"] = False
+    save_session(req.session_id, state)
+
+    return JSONResponse({
+        "status": "reservation_pending",
+        "session_id": req.session_id,
+        "reservation": info,
+        "message": info.get("message", "预约信息已生成，请确认是否出发。"),
+        "question": "请确认以上具体店铺/地点的预约信息是否满意。满意请回复“那就出发”或“就这样”；不满意请说明要调整哪里。"
+    })
+
+
+@app.get("/ping")
+def ping():
+    return {"status": "ok"}
+
+
+if __name__ == "__main__":
+    import uvicorn
+
+    uvicorn.run("app_api:app", host="127.0.0.1", port=8041, reload=False)

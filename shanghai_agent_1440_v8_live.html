@@ -1,0 +1,898 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>LocalMate Shanghai Agent V8 Live</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{
+      --bg:#f7f6fc;--card:#fff;--ink:#2c2c2a;--muted:#888780;--soft:#b4b2a9;
+      --line:#ded9f3;--purple:#7f77dd;--purple2:#534ab7;--blue:#378add;
+      --pink:#d4537e;--orange:#d85a30;--yellow:#ba7517;--green:#1d9e75;
+      --shadow:0 12px 34px rgba(66,58,120,.08);
+    }
+    html,body{height:100%;overflow:hidden}
+    body{min-height:100vh;background:var(--bg);font-family:"Microsoft YaHei",Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
+    button,input,textarea,select{font:inherit}
+    button{cursor:pointer}
+    .app{height:100vh;display:grid;grid-template-columns:280px minmax(0,1fr);background:linear-gradient(135deg,#fbfbff 0%,#f5f4fb 55%,#f7fbf9 100%);overflow:hidden}
+    .sidebar{display:flex;flex-direction:column;background:rgba(255,255,255,.88);border-right:1px solid rgba(220,215,245,.8);min-height:0}
+    .sidebar-header{padding:20px 18px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(220,215,245,.55)}
+    .logo-blob{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:var(--purple);color:#fff}
+    .brand{font-size:15px;font-weight:700;color:var(--ink)}.brand-sub{font-size:12px;color:var(--soft);margin-top:2px}
+    .new-btn{margin:12px;padding:10px 14px;border-radius:13px;border:1px dashed rgba(127,119,221,.45);background:transparent;color:var(--purple2);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700}
+    .new-btn:hover{background:rgba(127,119,221,.06)}
+    .history{flex:1;overflow-y:auto;padding:4px 10px 12px;display:flex;flex-direction:column;gap:4px}
+    .h-sep{font-size:11px;color:var(--soft);padding:8px 4px 4px;letter-spacing:.05em;font-weight:700}
+    .h-item{padding:10px 12px;border-radius:11px;border:1px solid transparent;position:relative;background:transparent;text-align:left}
+    button.h-item{width:100%;display:block;color:inherit;font:inherit;cursor:pointer}
+    .h-item.active{background:rgba(127,119,221,.09);border-color:rgba(175,169,236,.55)}
+    .h-dot{width:7px;height:7px;border-radius:50%;position:absolute;left:12px;top:18px}
+    .h-title{font-size:13px;font-weight:700;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .h-preview,.h-time{font-size:12px;color:var(--soft);margin-top:3px;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+    .h-time{font-size:11px;color:#d3d1c7}
+    .main{display:flex;flex-direction:column;min-width:0;height:100vh;min-height:0;overflow:hidden}
+    .topbar{height:68px;flex:0 0 auto;padding:13px 28px;border-bottom:1px solid rgba(220,215,245,.65);display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.76)}
+    .route-head{display:flex;align-items:center;gap:12px;min-width:0}
+    .route-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:#eeedfe;color:var(--purple)}
+    .topbar-title{font-size:17px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:560px}
+    .topbar-meta{font-size:12px;color:var(--soft);margin-top:4px;display:flex;gap:14px;flex-wrap:wrap}
+    .mc{display:inline-flex;align-items:center;gap:4px}
+    .top-actions{display:flex;gap:8px}
+    .t-btn{height:30px;padding:0 12px;border-radius:9px;border:1px solid rgba(220,215,245,.9);background:rgba(255,255,255,.72);display:flex;align-items:center;gap:5px;color:var(--muted);font-size:13px}
+    .t-btn:hover{background:#fff;color:var(--purple2);border-color:rgba(175,169,236,.65)}
+    .content{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) 330px;min-height:0;overflow:hidden}
+    .timeline-scroll{overflow-y:auto;padding:18px 26px 24px;min-height:0}
+    .conversation-card{border-radius:14px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.9);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px;min-height:calc(100% - 4px);display:flex;flex-direction:column}
+    .conversation-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
+    .conversation-title{font-size:14px;font-weight:800;display:flex;align-items:center;gap:7px}.conversation-title i{color:var(--purple)}
+    .conversation-meta{font-size:12px;color:var(--soft)}
+    .day-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
+    .day-pill{font-size:12px;font-weight:800;padding:5px 14px;border-radius:999px;background:rgba(255,255,255,.95);border:1px solid rgba(175,169,236,.45);color:var(--purple2);white-space:nowrap}
+    .day-line{flex:1;height:1px;background:rgba(175,169,236,.22)}
+    .ds{font-size:12px;color:var(--soft);display:flex;align-items:center;gap:4px}
+    .empty{min-height:460px;border:1px dashed rgba(175,169,236,.65);background:rgba(255,255,255,.72);border-radius:16px;display:flex;align-items:center;justify-content:center;text-align:center;padding:36px;color:var(--muted);line-height:1.8}
+    .stop-row{display:grid;grid-template-columns:46px 1fr}
+    .spine{display:flex;flex-direction:column;align-items:center;padding-top:8px}.s-dot{width:13px;height:13px;border-radius:50%;border:2px solid;flex-shrink:0}.s-line{width:2px;flex:1;min-height:16px;margin:3px 0;opacity:.32}
+    .sc-0{border-color:var(--yellow);background:#faeeda}.sl-0{background:var(--yellow)}.sc-1{border-color:var(--orange);background:#faece7}.sl-1{background:var(--orange)}
+    .sc-2{border-color:var(--pink);background:#fbeaf0}.sl-2{background:var(--pink)}.sc-3{border-color:var(--purple);background:#eeedfe}.sl-3{background:var(--purple)}
+    .sc-4{border-color:var(--blue);background:#e6f1fb}.sl-4{background:var(--blue)}.sc-5{border-color:var(--green);background:#e1f5ee}.sl-5{background:var(--green)}
+    .stop-card{border-radius:14px;padding:13px 15px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.86);box-shadow:var(--shadow)}
+    .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .card-left{flex:1;min-width:0}.tb{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;display:inline-block;margin-bottom:6px;background:#eeedfe;color:#3c3489;border:1px solid #afa9ec}
+    .stop-name{font-size:16px;font-weight:800;margin-bottom:5px}.stop-desc{font-size:13px;color:var(--muted);line-height:1.65;white-space:pre-wrap}
+    .tags{display:flex;gap:5px;margin-top:9px;flex-wrap:wrap}.tag{font-size:11px;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:3px;background:rgba(247,246,252,.95);border:1px solid rgba(220,215,245,.9);color:var(--muted)}
+    .ptb{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;padding:7px 8px;border-radius:11px;border:1px solid;min-width:58px;background:#eeedfe;color:#3c3489;border-color:#afa9ec}
+    .ptb i{font-size:20px}.ptb span{font-size:10px;font-weight:800;text-align:center;white-space:nowrap}
+    .task-row{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}.task-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(220,215,245,.9);background:rgba(255,255,255,.78);font-size:12px;color:var(--purple2);font-weight:800}
+    .task-btn:hover{background:#eeedfe;border-color:#afa9ec}.task-btn.done{color:#0f6e56;background:#e1f5ee;border-color:#5dcaa5}.task-btn.none{color:#9a8b79;background:#fff8ec;border-color:#ead7b6}.task-btn.coupon{color:#9b3c63;background:#fbeaf0;border-color:#ed93b1}
+    .transit-block{display:grid;grid-template-columns:46px 1fr;align-items:stretch}
+    .t-spine-wrap{display:flex;justify-content:center}.t-spine-line{width:2px;background:repeating-linear-gradient(to bottom,rgba(175,169,236,.42) 0 3px,transparent 3px 7px)}
+    .transit-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.9);background:rgba(255,255,255,.76);margin:6px 0;font-size:12px;color:var(--muted);position:relative}
+    .transport-popup{position:absolute;top:calc(100% + 5px);left:0;background:#fff;border:1px solid rgba(220,215,245,.95);border-radius:13px;padding:9px;z-index:30;display:none;min-width:230px;box-shadow:var(--shadow)}
+    .transport-popup.open{display:block}.tp-label{font-size:11px;font-weight:800;color:var(--soft);letter-spacing:.04em;margin-bottom:7px}
+    .tp-opt{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;border:1px solid transparent;margin-bottom:3px}.tp-opt:hover,.tp-opt.sel{background:#eeedfe;border-color:#afa9ec}
+    .summary-card{border-radius:14px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.86);padding:14px 16px;margin-top:14px;display:flex;box-shadow:var(--shadow)}
+    .sum-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}.sum-item+.sum-item{border-left:1px solid rgba(220,215,245,.65)}.sum-val{font-size:20px;font-weight:800}.sum-lbl{font-size:12px;color:var(--soft)}
+    .map-section{margin-top:18px;padding-top:16px;border-top:1px solid rgba(175,169,236,.18)}.section-title{font-size:14px;font-weight:800;display:flex;align-items:center;gap:7px;margin-bottom:11px}.section-title i{color:var(--purple)}
+    .map-wrap{border-radius:14px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.82);overflow:hidden;min-height:260px;display:flex;align-items:center;justify-content:center}
+    .route-map-img{width:100%;min-height:260px;object-fit:contain;display:block}.map-placeholder{padding:32px;color:var(--muted);font-size:13px;text-align:center}
+    .map-marker-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.map-marker-chip{font-size:12px;padding:5px 9px;border-radius:999px;background:#fff;border:1px solid rgba(220,215,245,.82);color:var(--muted)}
+    .right-panel{border-left:1px solid rgba(220,215,245,.65);padding:18px;display:flex;flex-direction:column;gap:14px;background:rgba(255,255,255,.55);overflow-y:auto}
+    .rp-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+    .rp-sum-card{padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.9);border:1px solid rgba(220,215,245,.72)}
+    .rp-sum-card-wide{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.9);border:1px solid rgba(220,215,245,.72)}
+    .rp-sum-val{font-size:20px;font-weight:800;color:var(--ink);line-height:1.2}
+    .rp-sum-lbl{font-size:11px;color:var(--soft);margin-top:3px}
+    .rp-label{font-size:11px;font-weight:800;color:var(--soft);letter-spacing:.05em;margin-bottom:8px}.tip-card{padding:11px 13px;border-radius:12px;background:rgba(255,255,255,.88);border:1px solid rgba(220,215,245,.72);font-size:13px;color:var(--muted);line-height:1.65;white-space:pre-wrap}
+    .tip-card strong{color:var(--purple2)}.chat-log{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}.msg{padding:9px 10px;border-radius:11px;background:#fff;border:1px solid rgba(220,215,245,.72);font-size:13px;color:var(--muted);line-height:1.55;white-space:pre-wrap}.msg.user{align-self:flex-end;max-width:86%;background:#eeedfe;color:#3c3489}.msg.bot{align-self:flex-start;max-width:96%;background:#fff}.msg.rich{width:min(760px,96%);white-space:normal;padding:12px;background:rgba(255,255,255,.96)}.chat-route-title{font-size:14px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:7px;margin-bottom:10px}.chat-route-title i{color:var(--purple)}.chat-map{margin-top:14px;padding-top:12px;border-top:1px solid rgba(175,169,236,.22)}.chat-map-title{font-size:13px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:6px;margin-bottom:8px}
+    .coupon-card,.reserve-card{border-radius:12px;padding:11px 12px;background:#fff;border:1px solid rgba(220,215,245,.72);margin-top:8px;line-height:1.55}.coupon-card{background:linear-gradient(135deg,#fff8ec,#fff)}.reserve-card{background:linear-gradient(135deg,#eefaf4,#fff)}
+    .coupon-card strong,.reserve-card strong{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}.mini-btn{margin-top:8px;border:none;background:var(--purple);color:#fff;border-radius:9px;padding:7px 10px;font-size:12px;font-weight:800}.mini-btn:hover{background:var(--purple2)}
+    .bottom-panel{flex:0 0 auto;border-top:1px solid rgba(220,215,245,.65);background:rgba(255,255,255,.92);box-shadow:0 -10px 30px rgba(66,58,120,.06);z-index:10}
+    .prefs-strip{padding:9px 26px 7px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pref-dd{position:relative}
+    .pref-trig,.quick-btn{height:29px;padding:0 11px;border-radius:999px;border:1px solid rgba(175,169,236,.55);background:rgba(255,255,255,.9);color:var(--purple2);font-size:12px;font-weight:800;display:flex;align-items:center;gap:5px;white-space:nowrap}
+    .quick-btn.selected,.pref-trig:hover,.quick-btn:hover{background:#eeedfe;border-color:#afa9ec}.pref-panel{position:absolute;bottom:calc(100% + 8px);left:0;background:#fff;border:1px solid rgba(220,215,245,.95);border-radius:15px;padding:13px;z-index:20;display:none;box-shadow:var(--shadow)}.pref-panel.open{display:block}
+    .igrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:370px}.int-chip,.pace-chip{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,.9);background:#f7f6fc;cursor:pointer}.int-chip.on,.pace-chip.on{border-color:#afa9ec;background:#eeedfe;color:#3c3489}
+    .int-chip span,.pace-chip span{font-size:11px;font-weight:800}.pace-row{display:flex;gap:5px;width:210px}.pace-chip{flex:1}
+    .regen-btn{height:29px;padding:0 13px;border-radius:999px;border:none;background:var(--purple);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;gap:5px}.psep{width:1px;height:18px;background:rgba(175,169,236,.35);margin:0 2px}
+    .input-row{padding:7px 26px 12px;display:flex;gap:9px;align-items:center}
+    .group-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}.member-select{height:36px;border-radius:11px;border:1px solid rgba(220,215,245,.8);background:#fff;padding:0 8px;display:none}
+    .chat-input{flex:1 1 640px;min-width:420px;width:100%;font-size:14px;padding:9px 15px;border-radius:13px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.92);color:var(--ink)}.chat-input:focus{outline:none;border-color:#afa9ec;background:#fff}
+    .send-btn{width:38px;height:38px;border-radius:12px;border:none;background:var(--purple);display:flex;align-items:center;justify-content:center;color:#fff}.send-btn:disabled{opacity:.5;cursor:not-allowed}
+    .detail-modal{position:fixed;inset:0;background:rgba(35,31,54,.28);display:none;align-items:center;justify-content:center;z-index:50;padding:18px}.detail-modal.open{display:flex}.detail-box{width:min(440px,100%);border-radius:14px;background:#fff;border:1px solid rgba(220,215,245,.95);box-shadow:0 24px 60px rgba(44,38,82,.18);padding:16px}.detail-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.detail-title{font-size:15px;font-weight:800}.detail-close{width:30px;height:30px;border-radius:9px;border:1px solid rgba(220,215,245,.9);background:#fff;color:var(--muted)}.detail-body{font-size:13px;line-height:1.7;color:var(--muted);white-space:pre-wrap}.detail-body strong{color:var(--ink)}
+    @media (max-width:1000px){.app{grid-template-columns:1fr}.sidebar{display:none}.content{grid-template-columns:1fr}.right-panel{display:none}.topbar{height:auto;align-items:flex-start;gap:12px}.top-actions{display:none}.timeline-scroll{padding:14px 14px 18px}.chat-log{max-height:30vh}.prefs-strip{padding:8px 14px}.input-row{padding:7px 14px 12px;display:grid;grid-template-columns:minmax(0,1fr) 38px}.chat-input{min-width:0;grid-column:1}.group-label,.member-select{grid-column:1 / -1}.send-btn{grid-column:2;grid-row:2}}
+  </style>
+</head>
+<body>
+<div class="app">
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-blob"><i class="ti ti-route"></i></div>
+      <div><div class="brand">Route Planner</div><div class="brand-sub">Shanghai weekend agent</div></div>
+    </div>
+    <button class="new-btn" id="new-plan"><i class="ti ti-plus"></i> New plan</button>
+    <div class="history" id="history-list"></div>
+  </aside>
+
+  <main class="main">
+    <header class="topbar">
+      <div class="route-head">
+        <div class="route-icon"><i class="ti ti-map-pin"></i></div>
+        <div>
+          <div class="topbar-title" id="route-title">上海周末出行规划 Agent</div>
+          <div class="topbar-meta">
+            <span class="mc"><i class="ti ti-calendar"></i><span id="meta-date">等待规划</span></span>
+            <span class="mc"><i class="ti ti-map-pin"></i><span id="meta-stops">0 stops</span></span>
+            <span class="mc"><i class="ti ti-clock"></i><span id="meta-duration">4-6 hrs</span></span>
+            <span class="mc"><i class="ti ti-wallet"></i><span id="meta-budget">预算待定</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="t-btn" id="share-btn"><i class="ti ti-share"></i> Share</button>
+        <button class="t-btn" id="export-btn"><i class="ti ti-download"></i> Export</button>
+        <button class="t-btn" id="map-focus-btn"><i class="ti ti-map"></i> Map view</button>
+      </div>
+    </header>
+
+    <section class="content">
+      <div class="timeline-scroll">
+        <div class="conversation-card">
+          <div class="conversation-head">
+            <div class="conversation-title"><i class="ti ti-messages"></i>主对话流程</div>
+            <div class="conversation-meta" id="conversation-meta">当前会话</div>
+          </div>
+          <div class="chat-log" id="chat-log">
+            <div class="msg bot">你好呀，我是你的上海周末出行规划助手。先告诉我几点出发、和谁去、几个人，我会继续追问一次关键信息。</div>
+          </div>
+        </div>
+        <div class="day-header" style="display:none">
+          <span class="day-pill" id="day-pill"><i class="ti ti-sun"></i> 输入需求后生成路线</span>
+          <div class="day-line"></div>
+          <span class="ds"><i class="ti ti-clock"></i><span id="day-duration">4-6 hrs</span></span>
+          <span class="ds"><i class="ti ti-route"></i><span id="day-distance">距离待计算</span></span>
+        </div>
+        <div id="timeline" style="display:none">
+          <div class="empty">
+            <div>
+              <strong>先告诉我你的出行时间和同行人群。</strong><br>
+              例如：周六下午2点，和爸妈三个人从嘉定出发，想室内轻松一点，人均200以内。<br>
+              生成后这里会变成新版 V8 风格的时间轴、转场、任务按钮和路线地图。
+            </div>
+          </div>
+        </div>
+        <div class="summary-card" id="summary-card" style="display:none">
+          <div class="sum-item"><div class="sum-val" id="sum-duration">5 hrs</div><div class="sum-lbl">Duration</div></div>
+          <div class="sum-item"><div class="sum-val" id="sum-stops">0</div><div class="sum-lbl">Stops</div></div>
+          <div class="sum-item"><div class="sum-val" id="sum-budget">待定</div><div class="sum-lbl">Budget</div></div>
+        </div>
+        <div class="map-section" id="map-section" style="display:none">
+          <div class="section-title"><i class="ti ti-map-2"></i>Route map</div>
+          <div class="map-wrap" id="map-wrap"><div class="map-placeholder">路线小地图等待生成</div></div>
+        </div>
+        <div class="map-section" id="plan-section" style="display:none">
+          <div class="section-title"><i class="ti ti-notes"></i>方案文案</div>
+          <div class="tip-card" id="plan-text">最终小红书文案会显示在这里，时间轴则使用 structured_plan 渲染。</div>
+        </div>
+      </div>
+
+      <aside class="right-panel">
+        <div>
+          <div class="rp-label">Summary</div>
+          <div class="rp-summary-grid">
+            <div class="rp-sum-card">
+              <div class="rp-sum-val" id="rp-duration">4-6 hrs</div>
+              <div class="rp-sum-lbl">Duration</div>
+            </div>
+            <div class="rp-sum-card">
+              <div class="rp-sum-val" id="rp-stops">0</div>
+              <div class="rp-sum-lbl">Stops</div>
+            </div>
+            <div class="rp-sum-card-wide">
+              <div>
+                <div class="rp-sum-val" id="rp-budget">待定</div>
+                <div class="rp-sum-lbl">Budget</div>
+              </div>
+              <div style="font-size:11px;color:var(--soft);text-align:right;line-height:1.7;">来自本次方案<br>随生成结果更新</div>
+            </div>
+          </div>
+        </div>
+        <div>
+          <div class="rp-label">Weather</div>
+          <div class="tip-card" id="weather-card">🌤️ 天气会在方案生成后自动显示。</div>
+        </div>
+        <div>
+          <div class="rp-label">Tips</div>
+          <div class="tip-card" id="tips-card">✨ 生成方案后，这里会给你一版可以直接照着走的小贴士。</div>
+        </div>
+        <div>
+          <div class="rp-label">Before You Go</div>
+          <div class="tip-card" id="checklist-card">出发前建议核验营业时间、余位和交通状态。</div>
+        </div>
+      </aside>
+    </section>
+
+    <footer class="bottom-panel">
+      <div class="prefs-strip">
+        <div class="pref-dd" id="dd-i">
+          <button class="pref-trig" id="btn-i" onclick="toggleDD('i')"><i class="ti ti-sparkles"></i> Interests <span id="i-cnt">3</span><i class="ti ti-chevron-down"></i></button>
+          <div class="pref-panel" id="panel-i">
+            <div class="rp-label">Select interests</div>
+            <div class="igrid" id="igrid">
+              <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-tools-kitchen-2"></i><span>美食</span></div>
+              <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-building-castle"></i><span>文化</span></div>
+              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-shopping-bag"></i><span>购物</span></div>
+              <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-palette"></i><span>艺术</span></div>
+              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-trees"></i><span>自然</span></div>
+              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-moon-stars"></i><span>夜游</span></div>
+              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-camera"></i><span>拍照</span></div>
+              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-ticket"></i><span>展览</span></div>
+              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-cup"></i><span>咖啡</span></div>
+              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-bike"></i><span>散步</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="psep"></div>
+        <div class="pref-dd" id="dd-p">
+          <button class="pref-trig" id="btn-p" onclick="toggleDD('p')"><i class="ti ti-gauge"></i> Pace: <span id="p-lbl">Balanced</span><i class="ti ti-chevron-down"></i></button>
+          <div class="pref-panel" id="panel-p">
+            <div class="rp-label">Travel pace</div>
+            <div class="pace-row">
+              <div class="pace-chip" onclick="setPace(this,'Relaxed')"><i class="ti ti-coffee"></i><span>Relaxed</span></div>
+              <div class="pace-chip on" onclick="setPace(this,'Balanced')"><i class="ti ti-walk"></i><span>Balanced</span></div>
+              <div class="pace-chip" onclick="setPace(this,'Packed')"><i class="ti ti-bolt"></i><span>Packed</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="psep"></div>
+        <button class="quick-btn" onclick="sendQuick('换近一点',this)">换近一点</button>
+        <button class="quick-btn" onclick="sendQuick('换便宜一点',this)">换便宜一点</button>
+        <button class="quick-btn" onclick="sendQuick('换成室内',this)">换室内</button>
+        <button class="quick-btn" onclick="sendQuick('优先有团购',this)">优先有团购</button>
+        <button class="quick-btn" onclick="sendQuick('少走路',this)">少走路</button>
+        <button class="regen-btn" onclick="sendPrompt('按当前偏好重新生成一版路线')"><i class="ti ti-refresh"></i> Regenerate</button>
+      </div>
+      <div class="input-row">
+        <label class="group-label"><input type="checkbox" id="group-toggle"> 多人偏好</label>
+        <select class="member-select" id="member-select" title="多人讨论身份"></select>
+        <input class="chat-input" id="user-input" type="text" placeholder="输入需求或修改意见，例如：周六下午2点，和朋友两个人从松江出发，想吃火锅，优先有团购">
+        <button class="send-btn" id="send-btn" aria-label="Send"><i class="ti ti-send"></i></button>
+      </div>
+    </footer>
+  </main>
+</div>
+<div class="detail-modal" id="detail-modal" onclick="closeDetailModal(event)">
+  <div class="detail-box">
+    <div class="detail-head">
+      <div class="detail-title" id="detail-title">详情</div>
+      <button class="detail-close" aria-label="关闭" onclick="closeDetailModal(event)"><i class="ti ti-x"></i></button>
+    </div>
+    <div class="detail-body" id="detail-body"></div>
+  </div>
+</div>
+
+<script>
+  const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8041" : "";
+  let currentSessionId = null;
+  let sharedRoomId = new URLSearchParams(location.search).get("room") || "";
+  let collaborationActive = Boolean(sharedRoomId);
+  let pollTimer = null;
+  let lastEventId = 0;
+  let groupDiscussionActive = false;
+  let latestData = null;
+  const clientId = localStorage.getItem("localmate_client_id") || `client_${Math.random().toString(36).slice(2,10)}`;
+  localStorage.setItem("localmate_client_id", clientId);
+  if (sharedRoomId) currentSessionId = `room:${sharedRoomId.replace(/[^a-zA-Z0-9_-]/g,"").slice(0,40)}`;
+
+  const $ = (id) => document.getElementById(id);
+  const inputEl = $("user-input");
+  const sendBtn = $("send-btn");
+  const memberSelect = $("member-select");
+  const groupToggle = $("group-toggle");
+  const HISTORY_KEY = "localmate_agent4_history_v1";
+  const WELCOME_TEXT = "你好呀，我是你的上海周末出行规划助手。先告诉我几点出发、和谁去、几个人，我会继续追问一次关键信息。";
+  let currentMessages = [];
+
+  function esc(s){return String(s ?? "").replace(/[&<>"']/g,(m)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
+  function safeReadHistory(){
+    try{return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]").filter(Boolean);}
+    catch(_){return [];}
+  }
+  function writeHistory(items){
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0,20)));
+  }
+  function formatHistoryTime(ts){
+    const date = ts ? new Date(ts) : new Date();
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate()-1);
+    const sameDay = (a,b)=>a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+    const hhmm = date.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"});
+    if(sameDay(date,today))return `今天 ${hhmm}`;
+    if(sameDay(date,yesterday))return `昨天 ${hhmm}`;
+    return `${date.getMonth()+1}/${date.getDate()} ${hhmm}`;
+  }
+  function ensureCurrentSession(){
+    if(!currentSessionId) currentSessionId = `local:${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
+    return currentSessionId;
+  }
+  function currentTitle(){
+    const firstUser = currentMessages.find(m=>m.role==="user");
+    if(firstUser && firstUser.text)return firstUser.text.slice(0,22);
+    return $("route-title").textContent || "当前会话";
+  }
+  function saveHistory(){
+    const id = ensureCurrentSession();
+    const existing = safeReadHistory().filter(item=>item.id !== id);
+    const lastMsg = currentMessages[currentMessages.length-1];
+    const record = {
+      id,
+      title: currentTitle(),
+      preview: lastMsg ? lastMsg.text.slice(0,34) : "等待输入出行需求",
+      updatedAt: Date.now(),
+      messages: currentMessages.slice(-80),
+      latestData
+    };
+    writeHistory([record, ...existing]);
+    renderHistoryList();
+  }
+  function renderHistoryList(){
+    const items = safeReadHistory();
+    const today = [];
+    const yesterday = [];
+    const older = [];
+    const now = new Date();
+    const y = new Date();
+    y.setDate(now.getDate()-1);
+    const sameDay = (ts,d)=>{const x=new Date(ts);return x.getFullYear()===d.getFullYear() && x.getMonth()===d.getMonth() && x.getDate()===d.getDate();};
+    items.forEach(item=>{
+      if(sameDay(item.updatedAt,now))today.push(item);
+      else if(sameDay(item.updatedAt,y))yesterday.push(item);
+      else older.push(item);
+    });
+    const group = (label,arr)=>arr.length ? `<div class="h-sep">${label}</div>` + arr.map(item=>`
+      <button class="h-item ${item.id===currentSessionId ? "active" : ""}" data-history-id="${esc(item.id)}">
+        <div class="h-dot" style="background:#7F77DD"></div>
+        <div class="h-title">${esc(item.title || "未命名会话")}</div>
+        <div class="h-preview">${esc(item.preview || "无摘要")}</div>
+        <div class="h-time">${esc(formatHistoryTime(item.updatedAt))}</div>
+      </button>`).join("") : "";
+    $("history-list").innerHTML = group("Today",today) + group("Yesterday",yesterday) + group("Earlier",older) || `<div class="h-sep">Today</div><div class="h-item active"><div class="h-dot" style="background:#7F77DD"></div><div class="h-title">当前会话</div><div class="h-preview">等待输入出行需求</div><div class="h-time">just now</div></div>`;
+  }
+  function loadHistory(id){
+    const item = safeReadHistory().find(x=>x.id===id);
+    if(!item)return;
+    currentSessionId = item.id;
+    latestData = item.latestData || null;
+    currentMessages = Array.isArray(item.messages) && item.messages.length ? item.messages : [{role:"bot",text:WELCOME_TEXT}];
+    $("chat-log").innerHTML = "";
+    currentMessages.forEach(m=>appendMsgNode(m.role,m.text));
+    if(latestData) renderTimeline(latestData, {skipHistory:true});
+    refreshConversationMeta(item.title || "历史会话");
+    renderHistoryList();
+    inputEl.focus();
+  }
+  function appendMsgNode(role,text){
+    const el=document.createElement("div");
+    el.className=`msg ${role}`;
+    el.textContent=text||"";
+    $("chat-log").appendChild(el);
+    $("chat-log").scrollTop=$("chat-log").scrollHeight;
+    return el;
+  }
+  function appendRichBotNode(html, extraClass=""){
+    const el=document.createElement("div");
+    el.className=`msg bot rich ${extraClass}`.trim();
+    el.innerHTML=html || "";
+    $("chat-log").appendChild(el);
+    $("chat-log").scrollTop=$("chat-log").scrollHeight;
+    return el;
+  }
+  function addMsg(role,text,options={}){
+    const el = appendMsgNode(role,text);
+    if(!options.skipHistory){
+      currentMessages.push({role,text:text||"",time:Date.now()});
+      refreshConversationMeta(currentTitle());
+      saveHistory();
+    }
+    return el;
+  }
+  function refreshConversationMeta(fallback){
+    const hard = latestData && latestData.structured_plan && latestData.structured_plan.hard_constraints;
+    $("conversation-meta").textContent = hard && hard.route_logic_mode ? routeLogicLabel(hard) : (fallback || currentTitle());
+  }
+  function setBusy(v){sendBtn.disabled=v;inputEl.disabled=v;}
+  function displayTimeRange(t){return String(t||"").replace(/^0/,"").replace("-0","-") || "时间待定";}
+  function roleIcon(role){if(role==="meal")return "ti-tools-kitchen-2";if(role==="light_food")return "ti-cup";if(role==="park")return "ti-trees";return "ti-map-pin";}
+  function roleLabel(role){if(role==="meal")return "Restaurant";if(role==="light_food")return "Cafe";if(role==="park")return "Park";if(role==="unknown")return "Place";return "Attraction";}
+  function displayName(item){return item.display_name || item.place || "待确认地点";}
+  function stopTags(item){
+    const tags = [item.purpose || "行程地点"];
+    if(item.place_role === "meal") tags.push("用餐");
+    if(item.place_role === "light_food") tags.push("轻食");
+    return tags.slice(0,3);
+  }
+  function normPlace(s){return String(s||"").replace(/\s+/g,"").toLowerCase();}
+  function samePlace(a,b){
+    const x=normPlace(a), y=normPlace(b);
+    return Boolean(x && y && (x===y || x.includes(y) || y.includes(x)));
+  }
+  function couponForPlace(placeName){
+    const items = ((latestData && latestData.coupon_info && latestData.coupon_info.items) || []);
+    return items.find(item=>samePlace(item.place_name,placeName) || samePlace(item.display_name,placeName));
+  }
+  function reservationForPlace(placeName){
+    const items = ((latestData && latestData.reservation_options) || []);
+    return items.find(item=>samePlace(item.place_name,placeName) || samePlace(item.display_name,placeName));
+  }
+  function showDetailModal(title, html){
+    $("detail-title").textContent = title;
+    $("detail-body").innerHTML = html;
+    $("detail-modal").classList.add("open");
+  }
+  function closeDetailModal(event){
+    if(event && event.target && event.target.closest(".detail-box") && !event.target.closest(".detail-close")) return;
+    $("detail-modal").classList.remove("open");
+  }
+  function showCouponInfo(encodedPlaceName){
+    const placeName = decodeURIComponent(encodedPlaceName || "");
+    const item = couponForPlace(placeName);
+    if(!item){
+      showDetailModal("团购券", `<strong>${esc(placeName)}</strong>\n当前最终路线里没有查到可用团购券。`);
+      return;
+    }
+    const name = item.display_name || item.place_name || placeName;
+    showDetailModal("团购券详情", `<strong>${esc(name)}</strong>
+${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核验")}
+类型：${esc(item.place_type || "unknown")}
+参考价格：${esc(item.price_range || "待核验")}
+
+<button class="mini-btn" onclick="reserveCoupon('${encodeURIComponent(item.place_name || name)}');document.getElementById('detail-modal').classList.remove('open')">领取并预约</button>`);
+  }
+  function showReservationInfo(encodedPlaceName){
+    const placeName = decodeURIComponent(encodedPlaceName || "");
+    const item = reservationForPlace(placeName);
+    const title = item && item.need_booking ? "预订详情" : "前往信息";
+    if(!item){
+      showDetailModal(title, `<strong>${esc(placeName)}</strong>\n当前地点暂无单独预订信息，建议出行前核验营业与余位。`);
+      return;
+    }
+    const name = item.display_name || item.place_name || placeName;
+    const btn = item.need_booking ? `\n<button class="mini-btn" onclick="reservePlace('${encodeURIComponent(item.place_name || name)}');document.getElementById('detail-modal').classList.remove('open')">确认预订</button>` : "";
+    showDetailModal(title, `<strong>${esc(name)}</strong>
+时间：${esc(item.time || "时间待定")}
+定位：${esc(item.purpose || "行程地点")}
+余位：${item.has_seat ? "有" : "暂无"}（${item.seat_count ?? 0}）
+预计排队：${item.queue_minutes ?? 0}分钟
+团购：${item.has_coupon ? esc(item.discount || "有团购") : "暂无团购券"}${btn}`);
+  }
+  function transitSummary(item){return (item.transport_from_previous && item.transport_from_previous.summary) || "交通距离暂未计算成功";}
+  function buildTransit(index,item){
+    const summary = transitSummary(item);
+    const icon = summary.includes("步行") ? "ti-walk" : summary.includes("打车") || summary.includes("驾车") ? "ti-car" : "ti-train";
+    const id = `tr-${index}`;
+    return `<div class="transit-block"><div class="t-spine-wrap"><div class="t-spine-line"></div></div><div style="padding:3px 0;">
+      <div class="transit-pill" id="${id}" onclick="toggleTransit('${id}')">
+        <i class="ti ${icon}"></i><span>${esc(summary)}</span><i class="ti ti-chevron-down"></i>
+        <div class="transport-popup">
+          <div class="tp-label">Transport reference</div>
+          <div class="tp-opt sel"><i class="ti ${icon}"></i><div><div>${esc(summary)}</div><small>来自后端高德/结构化路线</small></div></div>
+          <div class="tp-opt" onclick="sendPrompt('这段路少走路，优先地铁或打车')"><i class="ti ti-route"></i><div>少走路重排</div></div>
+        </div>
+      </div></div></div>`;
+  }
+  function buildInlineMapHtml(routeMap, sessionId){
+    const markers = (routeMap && routeMap.markers) || [];
+    const markerList = markers.length ? `<div class="map-marker-list">${markers.map(m=>`<span class="map-marker-chip">${esc(m.index)}. ${esc(m.place)}${m.time ? ` · ${esc(m.time)}` : ""}</span>`).join("")}</div>` : "";
+    if(routeMap && routeMap.available && sessionId){
+      return `<div class="chat-map">
+        <div class="chat-map-title"><i class="ti ti-map-2"></i>路线地图</div>
+        <div class="map-wrap">
+          <img class="route-map-img" alt="路线地图" src="${API_BASE}/route_map/${encodeURIComponent(sessionId)}?t=${Date.now()}" onerror="this.parentElement.innerHTML='<div class=&quot;map-placeholder&quot;>地图图片加载失败，请按站点顺序查看路线。</div>'">
+        </div>
+        ${markerList}
+      </div>`;
+    }
+    return `<div class="chat-map">
+      <div class="chat-map-title"><i class="ti ti-map-2"></i>路线地图</div>
+      <div class="map-placeholder">${esc((routeMap && routeMap.reason) || "路线小地图暂未生成")}${markerList}</div>
+    </div>`;
+  }
+  function routeLogicLabel(hard){
+    const mode = hard && hard.route_logic_mode;
+    if(mode === "fixed_start_destination") return `固定起终点：${hard.departure || "起点"} → ${hard.destination || "终点"}`;
+    if(mode === "single_anchor_destination") return `目的地锚点：${hard.destination || hard.planning_anchor || "未指定"}`;
+    if(mode === "single_anchor_departure") return `出发地锚点：${hard.departure || hard.planning_anchor || "未指定"}`;
+    return "当前会话";
+  }
+  function renderTimeline(data, options={}){
+    latestData = data;
+    const plan = data.structured_plan || {};
+    const hard = plan.hard_constraints || {};
+    const schedule = Array.isArray(plan.schedule) ? plan.schedule : [];
+    $("conversation-meta").textContent = routeLogicLabel(hard);
+    const title = schedule.length ? schedule.map(displayName).slice(0,2).join(" + ") : "上海周末出行规划 Agent";
+    $("route-title").textContent = title;
+    $("meta-date").textContent = hard.date || "本周末";
+    $("meta-stops").textContent = `${schedule.length} stops`;
+    $("meta-duration").textContent = `${hard.duration_hours || 5} hrs`;
+    $("meta-budget").textContent = hard.budget || "预算待定";
+    $("rp-duration").textContent = `${hard.duration_hours || 5} hrs`;
+    $("rp-stops").textContent = schedule.length;
+    $("rp-budget").textContent = hard.budget || "待定";
+    $("day-pill").innerHTML = `<i class="ti ti-sun"></i> ${esc(hard.date || "本周末")} · ${esc(hard.time_period || "半日")}`;
+    $("day-duration").textContent = `${hard.duration_hours || 5} hrs`;
+    $("day-distance").textContent = (data.distance_info || "").match(/合计约\s*([^。；\n]+)/)?.[1] || "距离已校验";
+
+    if(!schedule.length){
+      document.querySelectorAll(".route-result-msg").forEach(n=>n.remove());
+      appendRichBotNode(`<div class="chat-route-title"><i class="ti ti-route"></i>结构化路线</div><div class="empty" style="min-height:180px">这次没有返回可用 structured_plan.schedule，请检查后端规划结果。</div>`, "route-result-msg");
+      renderRightPanel(data);
+      return;
+    }
+
+    let html = "";
+    schedule.forEach((item,idx)=>{
+      const color = idx % 6;
+      const name = displayName(item);
+      const coupon = couponForPlace(name) || couponForPlace(item.place);
+      const reservation = reservationForPlace(name) || reservationForPlace(item.place);
+      const bookingNeeded = Boolean((reservation && reservation.need_booking) || item.need_booking);
+      const descParts = [
+        item.purpose ? `定位：${item.purpose}` : "",
+        item.price_text ? `参考花费：${item.price_text}` : "参考花费：价格待核验",
+        item.address ? `地址：${item.address}` : "",
+        idx === 0 ? "开场先稳住节奏，不急着赶场。" : "这一站负责自然衔接上一段，尽量减少绕路。"
+      ].filter(Boolean);
+      html += `<div class="stop-row">
+        <div class="spine"><div class="s-dot sc-${color}"></div>${idx < schedule.length-1 ? `<div class="s-line sl-${color}" style="min-height:84px"></div>` : ""}</div>
+        <div class="stop-card">
+          <div class="card-head">
+            <div class="card-left">
+              <span class="tb">${esc(displayTimeRange(item.time))}</span>
+              <div class="stop-name">${esc(name)}</div>
+              <div class="stop-desc">${esc(descParts.join("\n"))}</div>
+              <div class="tags">${stopTags(item).map(t=>`<span class="tag"><i class="ti ti-check"></i>${esc(t)}</span>`).join("")}</div>
+            </div>
+            <div class="ptb"><i class="ti ${roleIcon(item.place_role)}"></i><span>${esc(roleLabel(item.place_role))}</span></div>
+          </div>
+          <div class="task-row">
+            ${bookingNeeded ? `<button class="task-btn" onclick="showReservationInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-calendar-check"></i> 预订</button>` : `<button class="task-btn done" onclick="showReservationInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-check"></i> 可直接前往</button>`}
+            ${coupon ? `<button class="task-btn coupon" onclick="showCouponInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-ticket"></i> 团购券</button>` : `<button class="task-btn none" onclick="showCouponInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-ticket-off"></i> 无团购券</button>`}
+          </div>
+        </div>
+      </div>`;
+      if(idx < schedule.length-1) html += buildTransit(idx+1,schedule[idx+1]);
+    });
+    document.querySelectorAll(".route-result-msg").forEach(n=>n.remove());
+    appendRichBotNode(`
+      <div class="chat-route-title"><i class="ti ti-route"></i>结构化路线与地图</div>
+      <div class="day-header" style="margin-bottom:10px">
+        <span class="day-pill"><i class="ti ti-sun"></i> ${esc(hard.date || "本周末")} · ${esc(hard.time_period || "半日")}</span>
+        <div class="day-line"></div>
+        <span class="ds"><i class="ti ti-clock"></i>${esc(`${hard.duration_hours || 5} hrs`)}</span>
+        <span class="ds"><i class="ti ti-map-pin"></i>${esc(`${schedule.length} stops`)}</span>
+      </div>
+      ${html}
+      ${buildInlineMapHtml(data.route_map, data.session_id)}
+    `, "route-result-msg");
+    renderRightPanel(data);
+    if(!options.skipHistory) saveHistory();
+    return;
+    $("timeline").innerHTML = html;
+    $("summary-card").style.display = "flex";
+    $("sum-duration").textContent = `${hard.duration_hours || 5} hrs`;
+    $("sum-stops").textContent = schedule.length;
+    $("sum-budget").textContent = hard.budget || "待定";
+    $("rp-duration").textContent = `${hard.duration_hours || 5} hrs`;
+    $("rp-stops").textContent = schedule.length;
+    $("rp-budget").textContent = hard.budget || "待定";
+    renderMap(data.route_map, data.session_id);
+    renderRightPanel(data);
+    if(!options.skipHistory) saveHistory();
+  }
+  function renderMap(routeMap,sessionId){
+    $("map-section").style.display = "block";
+    const markers = (routeMap && routeMap.markers) || [];
+    const markerList = markers.length ? `<div class="map-marker-list">${markers.map(m=>`<span class="map-marker-chip">${esc(m.index)}. ${esc(m.place)}${m.time ? `｜${esc(m.time)}` : ""}</span>`).join("")}</div>` : "";
+    if(routeMap && routeMap.available && sessionId){
+      const wrap = document.createElement("div");
+      wrap.style.width = "100%";
+      const img = document.createElement("img");
+      img.className = "route-map-img";
+      img.alt = "路线小地图";
+      img.src = `${API_BASE}/route_map/${encodeURIComponent(sessionId)}?t=${Date.now()}`;
+      img.onerror = () => showMapFallback((routeMap && routeMap.reason) || "地图图片加载失败，请按下方站点顺序查看路线。");
+      wrap.appendChild(img);
+      if(markerList) wrap.insertAdjacentHTML("beforeend", markerList);
+      $("map-wrap").innerHTML = "";
+      $("map-wrap").appendChild(wrap);
+    }else{
+      $("map-wrap").innerHTML = `<div class="map-placeholder">${esc((routeMap&&routeMap.reason)||"路线小地图暂未生成")}${markerList}</div>`;
+    }
+  }
+  function showMapFallback(reason){
+    const markers = ((latestData && latestData.route_map && latestData.route_map.markers) || []);
+    const markerList = markers.length ? `<div class="map-marker-list">${markers.map(m=>`<span class="map-marker-chip">${esc(m.index)}. ${esc(m.place)}${m.time ? `｜${esc(m.time)}` : ""}</span>`).join("")}</div>` : "";
+    $("map-wrap").innerHTML = `<div class="map-placeholder">${esc(reason || "地图图片加载失败")}${markerList}</div>`;
+  }
+  window.showMapFallback = showMapFallback;
+  function weatherEmoji(text){
+    const t = String(text || "");
+    if(/雨|阵雨|雷|湿/.test(t)) return "🌧️";
+    if(/晴|太阳|高温|热|晒/.test(t)) return "☀️";
+    if(/云|阴/.test(t)) return "⛅";
+    if(/冷|低温|寒|风/.test(t)) return "🧣";
+    return "🌤️";
+  }
+  function renderWeatherCard(text){
+    const summary = String(text || "").trim();
+    if(!summary){
+      $("weather-card").innerHTML = "🌤️ 天气会在方案生成后自动显示。出发前再看一眼实时天气，路线会更稳。";
+      return;
+    }
+    $("weather-card").innerHTML = `${weatherEmoji(summary)} ${esc(summary)}\n\n小提醒：按天气带好伞/外套/防晒，临出门前再核验一次实时预报。`;
+  }
+  function renderRightPanel(data){
+    const plan = data.structured_plan || {};
+    const hard = plan.hard_constraints || {};
+    renderWeatherCard(hard.weather_reference || "");
+    $("plan-section").style.display = "none";
+    $("plan-text").textContent = polishPlanText(data.plan || "暂无最终文案");
+    renderSideTips(data);
+  }
+  function renderSideTips(data){
+    const plan = data.structured_plan || {};
+    const schedule = Array.isArray(plan.schedule) ? plan.schedule : [];
+    const first = schedule[0] ? displayName(schedule[0]) : "第一站";
+    const last = schedule[schedule.length-1] ? displayName(schedule[schedule.length-1]) : "最后一站";
+    const validation = plan.route_logic_validation || {};
+    const events = Array.isArray(data.exception_events) ? data.exception_events : (validation.exception_events || []);
+    const conflicts = Array.isArray(data.adjustment_conflicts) ? data.adjustment_conflicts : (validation.adjustment_conflicts || []);
+    const eventLines = events.length ? events.slice(0,3).map(e => `⚠️ ${esc(e.message || e)}`) : [];
+    const conflictLines = conflicts.length ? conflicts.slice(0,4).map(c => `⚠️ ${esc(c)}`) : [];
+    $("tips-card").innerHTML = [
+      `✨ <strong>怎么走更舒服</strong>：从“${esc(first)}”开始，最后用“${esc(last)}”收尾，照着时间轴走就行。`,
+      `📸 拍照节奏：先拍环境，再吃/喝/休息，最后一站收尾更自然。`,
+      `💰 预算提示：每站参考花费已写在路线卡片里，实际以商家页面为准。`,
+      ...eventLines,
+      ...conflictLines
+    ].filter(Boolean).join("\n");
+    $("checklist-card").innerHTML = [
+      "出发前看这 3 件事：",
+      "1. 先核验营业时间、是否临时闭馆/满位。",
+      "2. 点主卡片里的预订/团购券，看实时余位、排队和优惠。",
+      "3. 地图如果加载失败，就按主页面站点编号顺序走。"
+    ].join("\n");
+  }
+  function polishPlanText(text){
+    const raw = String(text || "").trim();
+    if(!raw || raw === "暂无最终文案") return raw;
+    const alreadyLively = /无脑冲|氛围感|姐妹|宝子|真的|直接/.test(raw);
+    if(alreadyLively) return raw;
+    return [
+      "周末不知道去哪？这条路线可以直接抄作业！✨",
+      "不想做攻略的话，这版就按“少折腾、能吃能逛、转场别太累”的思路来安排，适合直接照着走。",
+      "",
+      raw,
+      "",
+      "小提示：出发前再看一眼营业时间和余位；如果想更近、更便宜、换室内或优先团购，直接在下面一句话告诉我就行。"
+    ].join("\n");
+  }
+  function setGroupDiscussionActive(active){
+    groupDiscussionActive = active;
+    memberSelect.style.display = active ? "block" : "none";
+  }
+  function updateMemberOptions(options){
+    const labels = Array.isArray(options) && options.length ? options : ["A","B"];
+    memberSelect.innerHTML = labels.map(v=>`<option value="${esc(v)}">${esc(v)}</option>`).join("");
+  }
+  function interestText(){
+    const interests = selectedInterests();
+    return interests.length ? `兴趣偏好：${interests.join("、")}` : "";
+  }
+  function stripInterestText(text){
+    return String(text || "")
+      .replace(/（?兴趣偏好：[^）\n]+）?/g, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/Interests:.*$/g, "")
+      .trim();
+  }
+  function syncInterestsToInput(){
+    const interests = selectedInterests();
+    const base = String(inputEl.value || "")
+      .replace(/Interests:.*$/g, "")
+      .replace(/Interests:\s*[^，,。；;\n]+(?:[，,]\s*[^，,。；;\n]+)*/g, "")
+      .trim();
+    const text = interests.length ? `Interests: ${interests.join(", ")}` : "";
+    inputEl.value = [base, text].filter(Boolean).join(base && text ? " " : "");
+    inputEl.focus();
+  }
+  async function sendMessage(){
+    const text = inputEl.value.trim();
+    if(!text)return;
+    const visibleText = text;
+    addMsg("user", (groupDiscussionActive ? `${memberSelect.value}: ` : "") + visibleText);
+    inputEl.value = "";
+    document.querySelectorAll(".quick-btn.selected").forEach(b=>b.classList.remove("selected"));
+    await callPlan(visibleText);
+  }
+  async function runInlineTask(button, encodedPrompt){
+    const prompt = decodeURIComponent(encodedPrompt || "");
+    if(!prompt)return;
+    if(button){
+      button.classList.add("done");
+      button.innerHTML = '<i class="ti ti-loader"></i> 查询中';
+    }
+    addMsg("user", prompt);
+    await callPlan(prompt);
+    if(button){
+      button.innerHTML = '<i class="ti ti-check"></i> 已查询';
+    }
+  }
+  async function callPlan(text){
+    setBusy(true);
+    const thinking = addMsg("bot","正在规划中...");
+    try{
+      const body = {user_input:text, enable_group_discussion:Boolean(groupToggle.checked), client_id:clientId};
+      if(currentSessionId) body.session_id = currentSessionId;
+      if(sharedRoomId) body.room_id = sharedRoomId;
+      if(groupDiscussionActive) body.speaker = memberSelect.value;
+      const res = await fetch(`${API_BASE}/plan`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      let data = {};
+      try{
+        data = await res.json();
+      }catch(_){
+        const raw = await res.text().catch(()=>"");
+        data = {error: raw || `HTTP ${res.status}`};
+      }
+      if(thinking) thinking.remove();
+      if(!res.ok){addMsg("bot",`后端接口出错：${data.error || res.status}`);return;}
+      if(data.error){addMsg("bot",`出错了：${data.error}`);return;}
+      currentSessionId = data.session_id || currentSessionId;
+      if(data.status === "need_info"){setGroupDiscussionActive(false);addMsg("bot",data.question || "请补充信息。");return;}
+      if(data.status === "need_group_discussion"){setGroupDiscussionActive(true);updateMemberOptions(data.member_options);addMsg("bot",data.question || "请各成员继续补充偏好。");return;}
+      if(data.status === "satisfied"){setGroupDiscussionActive(false);addMsg("bot",data.message || "已记录满意。");return;}
+      if(data.status === "reservation_pending" || data.status === "trip_ready"){addMsg("bot",data.message || "已更新预约状态。");return;}
+      if(data.status === "plan_ready"){
+        setGroupDiscussionActive(false);
+        addMsg("bot",`方案已生成，用时 ${data.generation_time_seconds ?? "-"} 秒。${data.generation_time_over_limit ? "已超过30秒目标。" : "满足30秒目标。"}`);
+        renderTimeline(data);
+        if(data.plan)addMsg("bot", polishPlanText(data.plan));
+        if(data.satisfaction_question)addMsg("bot",data.satisfaction_question);
+        return;
+      }
+      addMsg("bot",JSON.stringify(data,null,2));
+    }catch(err){
+      if(thinking) thinking.remove();
+      addMsg("bot",`请求失败：${err.message}`);
+    }
+    finally{setBusy(false);inputEl.focus();}
+  }
+  async function reserveCoupon(encodedPlaceName){
+    if(!currentSessionId){addMsg("bot","会话已失效，请先生成方案。");return;}
+    const placeName = decodeURIComponent(encodedPlaceName || "");
+    const thinking = addMsg("bot",`正在生成 ${placeName} 的团购预约信息...`);
+    try{
+      const res = await fetch(`${API_BASE}/reserve_coupon`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session_id:currentSessionId,place_name:placeName})});
+      const data = await res.json();
+      thinking.remove();
+      addMsg("bot",data.message || data.error || "团购券预约信息已更新。");
+      if(data.question)addMsg("bot",data.question);
+    }catch(err){
+      thinking.remove();
+      addMsg("bot",`团购券预约失败：${err.message}`);
+    }
+  }
+  async function reservePlace(encodedPlaceName){
+    if(!currentSessionId){addMsg("bot","会话已失效，请先生成方案。");return;}
+    const placeName = decodeURIComponent(encodedPlaceName || "");
+    const thinking = addMsg("bot",`正在生成 ${placeName} 的预订信息...`);
+    try{
+      const res = await fetch(`${API_BASE}/reserve_place`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session_id:currentSessionId,place_name:placeName})});
+      const data = await res.json();
+      thinking.remove();
+      addMsg("bot",data.message || data.error || "预订信息已更新。");
+      if(data.question)addMsg("bot",data.question);
+    }catch(err){
+      thinking.remove();
+      addMsg("bot",`预订失败：${err.message}`);
+    }
+  }
+  function sendQuick(text,btn){
+    const parts = inputEl.value.trim() ? inputEl.value.trim().split(/\s*[，,、]\s*/).filter(Boolean) : [];
+    const exists = parts.includes(text);
+    inputEl.value = (exists ? parts.filter(x=>x!==text) : [...parts,text]).join("，");
+    if(btn)btn.classList.toggle("selected",!exists);
+    inputEl.focus();
+  }
+  function sendPrompt(text){inputEl.value = text;inputEl.focus();}
+  function resetUi(){
+    currentSessionId = null;
+    latestData = null;
+    lastEventId = 0;
+    sharedRoomId = "";
+    stopEventPolling();
+    setGroupDiscussionActive(false);
+    inputEl.value = "";
+    document.querySelectorAll(".quick-btn.selected").forEach(b=>b.classList.remove("selected"));
+    $("route-title").textContent = "上海周末出行规划 Agent";
+    $("meta-date").textContent = "等待规划";
+    $("meta-stops").textContent = "0 stops";
+    $("meta-duration").textContent = "4-6 hrs";
+    $("meta-budget").textContent = "预算待定";
+    $("day-pill").innerHTML = '<i class="ti ti-sun"></i> 输入需求后生成路线';
+    $("day-duration").textContent = "4-6 hrs";
+    $("day-distance").textContent = "距离待计算";
+    $("timeline").innerHTML = `<div class="empty"><div><strong>先告诉我你的出行时间和同行人群。</strong><br>例如：周六下午2点，和爸妈三个人从嘉定出发，想室内轻松一点，人均200以内。<br>生成后这里会变成新版 V8 风格的时间轴、转场、任务按钮和路线地图。</div></div>`;
+    $("rp-duration").textContent = "4-6 hrs";
+    $("rp-stops").textContent = "0";
+    $("rp-budget").textContent = "待定";
+    $("summary-card").style.display = "none";
+    $("map-section").style.display = "none";
+    $("plan-section").style.display = "none";
+    $("weather-card").textContent = "🌤️ 天气会在方案生成后自动显示。";
+    $("tips-card").textContent = "✨ 生成方案后，这里会给你一版可以直接照着走的小贴士。";
+    $("checklist-card").textContent = "出发前建议核验营业时间、余位和交通状态。";
+    $("plan-text").textContent = "最终小红书文案会显示在这里，时间轴则使用 structured_plan 渲染。";
+    $("chat-log").innerHTML = "";
+    currentMessages = [];
+    $("conversation-meta").textContent = "当前会话";
+    addMsg("bot",WELCOME_TEXT);
+  }
+  function toggleDD(id){["i","p"].forEach(k=>{const p=$(`panel-${k}`),b=$(`btn-${k}`);const open=k===id && !p.classList.contains("open");p.classList.toggle("open",open);b.classList.toggle("open",open);});}
+  function selectedInterests(){
+    return Array.from(document.querySelectorAll("#igrid .int-chip.on span"))
+      .map(el=>el.textContent.trim())
+      .filter(Boolean);
+  }
+  function togInt(el){
+    el.classList.toggle("on");
+    $("i-cnt").textContent=document.querySelectorAll("#igrid .int-chip.on").length;
+    syncInterestsToInput();
+  }
+  function setPace(el,label){el.parentElement.querySelectorAll(".pace-chip").forEach(c=>c.classList.remove("on"));el.classList.add("on");$("p-lbl").textContent=label;}
+  function toggleTransit(id){const el=$(id);const pop=el.querySelector(".transport-popup");const open=pop.classList.contains("open");document.querySelectorAll(".transport-popup").forEach(p=>p.classList.remove("open"));if(!open)pop.classList.add("open");}
+  async function copyShareLink(){
+    if(!currentSessionId){sharedRoomId = sharedRoomId || `room${Math.random().toString(36).slice(2,8)}`;currentSessionId=`room:${sharedRoomId}`;}
+    const room = currentSessionId.startsWith("room:") ? currentSessionId.replace("room:","") : "";
+    const url = new URL(location.href);
+    if(room){url.searchParams.set("room",room);url.searchParams.delete("session_id");}
+    else url.searchParams.set("session_id",currentSessionId);
+    try{await navigator.clipboard.writeText(url.toString());addMsg("bot","协作链接已复制。");}catch(_){addMsg("bot",url.toString());}
+    collaborationActive = true;startEventPolling();
+  }
+  async function pollSessionEvents(){
+    if(!collaborationActive || !currentSessionId)return;
+    try{
+      const res = await fetch(`${API_BASE}/events/${encodeURIComponent(currentSessionId)}?since=${lastEventId}`);
+      const data = await res.json();
+      if(!data.exists || data.ended){stopEventPolling();return;}
+      (data.events||[]).forEach(ev=>{lastEventId=Math.max(lastEventId,Number(ev.id)||0);if(ev.client_id!==clientId)addMsg(ev.role==="user"?"user":"bot",`${ev.speaker?ev.speaker+": ":""}${ev.text||""}`);});
+      if(data.last_event_id)lastEventId=Math.max(lastEventId,Number(data.last_event_id)||0);
+    }catch(_){}
+  }
+  function startEventPolling(){if(pollTimer)return;pollTimer=setInterval(pollSessionEvents,1800);pollSessionEvents();}
+  function stopEventPolling(){collaborationActive=false;if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
+  function exportPlan(){
+    const blob = new Blob([JSON.stringify(latestData || {},null,2)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="localmate-plan.json";a.click();URL.revokeObjectURL(a.href);
+  }
+  currentMessages = [{role:"bot",text:WELCOME_TEXT,time:Date.now()}];
+  renderHistoryList();
+  $("history-list").addEventListener("click",(e)=>{
+    const item = e.target.closest("[data-history-id]");
+    if(item) loadHistory(item.getAttribute("data-history-id"));
+  });
+  $("send-btn").addEventListener("click",sendMessage);
+  inputEl.addEventListener("keydown",(e)=>{if(e.key==="Enter"){e.preventDefault();sendMessage();}});
+  $("new-plan").addEventListener("click",resetUi);
+  $("share-btn").addEventListener("click",copyShareLink);
+  $("export-btn").addEventListener("click",exportPlan);
+  $("map-focus-btn").addEventListener("click",()=>$("map-section").scrollIntoView({behavior:"smooth"}));
+  if(collaborationActive && currentSessionId)startEventPolling();
+</script>
+</body>
+</html>
