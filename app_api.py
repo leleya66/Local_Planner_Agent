@@ -754,6 +754,7 @@ async def get_session_state(session_id: str):
         "group_discussion": state.get("group_discussion") or {},
         "structured_plan": state.get("structured_plan") or {},
         "validation_report": state.get("validation_report") or {},
+        "feasibility_report": state.get("feasibility_report") or ((state.get("structured_plan") or {}).get("feasibility_report") or {}),
         "final_plan": state.get("final_plan") or "",
     })
 
@@ -1028,6 +1029,7 @@ async def _plan_impl(req: PlanRequest, session_id: str):
         "distance_info": result.get("route_distance_info", ""),
         "structured_plan": result.get("structured_plan", {}),
         "validation_report": result.get("validation_report", {}),
+        "feasibility_report": result.get("feasibility_report") or ((result.get("structured_plan") or {}).get("feasibility_report") or {}),
         "coupon_info": result.get("coupon_info", {}),
         "reservation_options": result.get("reservation_options", []),
         "route_map": public_route_map(result.get("route_map", {})),

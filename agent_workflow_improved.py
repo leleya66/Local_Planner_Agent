@@ -84,6 +84,7 @@ class AgentState(TypedDict):
     coupon_info: Optional[dict]
     structured_plan: Optional[dict]
     validation_report: Optional[dict]
+    feasibility_report: Optional[dict]
     reservation_options: Optional[list]
     exception: Optional[str]
     final_plan: Optional[str]
@@ -1884,19 +1885,48 @@ def filter_coupon_info_for_schedule(coupon_info: dict, structured_plan: dict) ->
 
 
 def place_role(place_name: str) -> str:
-    """把地点分成 meal / light_food / non_food，用于避免连续吃两顿。"""
-    row = _find_place(place_name)
-    if row is None:
-        return "unknown"
-    place_type = str(row.get("地点类型", "")).strip()
-    sub_type = str(row.get("sub_type", "") or "").strip()
-    name = str(row.get("placeName", place_name) or place_name).lower()
-    if place_type != "restaurant":
+    """把地点分成 meal / light_food / non_food。
+
+    注意：最终路线约束依赖这个函数。高德返回的展示名可能是
+    “原地点（解析到的分店名）”这种复合名称，未必能被 _find_place 精确命中，
+    所以这里必须有关键词兜底，避免正餐/咖啡被误判为 unknown 后绕过规则。
+    """
+    raw_name = str(place_name or "").strip()
+    lowered_raw = raw_name.lower()
+
+    light_keywords = [
+        "咖啡", "coffee", "cafe", "星巴克", "manner", "seesaw", "arabica",
+        "下午茶", "甜品", "蛋糕", "面包", "烘焙", "茶饮", "奶茶", "贝果",
+    ]
+    meal_keywords = [
+        "餐厅", "饭店", "酒家", "食堂", "小吃", "火锅", "烤肉", "烧肉",
+        "泥炉", "羊肉", "白切羊肉", "本帮", "江浙菜", "上海菜", "韩料",
+        "韩国料理", "日料", "寿司", "拉面", "面馆", "小笼", "小笼包",
+        "生煎", "汤包", "烧烤", "牛排", "披萨", "海底捞", "西塔老太太",
+    ]
+
+    row = _find_place(raw_name)
+    if row is not None:
+        place_type = str(row.get("地点类型", "")).strip()
+        sub_type = str(row.get("sub_type", "") or "").strip()
+        name = str(row.get("placeName", raw_name) or raw_name).lower()
+        combined = f"{raw_name} {name}".lower()
+        if place_type == "restaurant":
+            if sub_type in {"cafe", "bakery"} or any(term.lower() in combined for term in light_keywords):
+                return "light_food"
+            return "meal"
+        # 地点表类型不是 restaurant，但复合展示名里明显含餐饮关键词时，仍按餐饮处理。
+        if any(term.lower() in combined for term in light_keywords):
+            return "light_food"
+        if any(term.lower() in combined for term in meal_keywords):
+            return "meal"
         return "non_food"
-    if sub_type in {"cafe", "bakery"} or any(
-            term in name for term in ["咖啡", "coffee", "cafe", "星巴克", "面包", "甜品"]):
+
+    if any(term.lower() in lowered_raw for term in light_keywords):
         return "light_food"
-    return "meal"
+    if any(term.lower() in lowered_raw for term in meal_keywords):
+        return "meal"
+    return "unknown"
 
 
 def same_food_brand(a: str, b: str) -> bool:
@@ -1907,9 +1937,104 @@ def same_food_brand(a: str, b: str) -> bool:
         return False
     if ak in bk or bk in ak:
         return True
-    brand_terms = ["海底捞", "火锅", "小笼", "生煎", "面馆", "韩料", "韩国料理", "江浙菜"]
+    brand_terms = ["海底捞", "火锅", "小笼", "生煎", "面馆", "韩料", "韩国料理", "江浙菜", "烤肉", "泥炉", "羊肉", "白切羊肉", "西塔老太太"]
     return any(term in str(a) and term in str(b) for term in brand_terms)
 
+
+
+
+def is_food_place_role(role: str) -> bool:
+    return role in {"meal", "light_food"}
+
+
+def route_has_meal(places: list[str]) -> bool:
+    return any(place_role(place) == "meal" for place in (places or []))
+
+
+def candidate_food_conflict(candidate: str, existing_places: list[str]) -> Optional[str]:
+    """Return a human-readable reason when candidate would break food rhythm.
+
+    规则：
+    - 半日路线最多保留一顿正餐；
+    - 不允许连续两家咖啡/甜品/轻食；
+    - 不允许同品牌/同类餐饮连续或重复补入。
+    """
+    role = place_role(candidate)
+    if role not in {"meal", "light_food"}:
+        return None
+
+    existing = [p for p in (existing_places or []) if p]
+    if role == "meal" and route_has_meal(existing):
+        return "一条 4-6 小时路线里不安排第二顿正餐"
+
+    last_role = place_role(existing[-1]) if existing else None
+    if role == "meal" and last_role == "meal":
+        return "避免连续两顿正餐"
+    if role == "light_food" and last_role == "light_food":
+        return "避免连续两家咖啡/甜品/轻食"
+
+    if role in {"meal", "light_food"} and any(
+            place_role(old) in {"meal", "light_food"} and same_food_brand(candidate, old)
+            for old in existing
+    ):
+        return "避免重复安排同品牌/同类型餐饮"
+    return None
+
+
+def can_append_food_safe(candidate: str, existing_places: list[str], state: Optional[AgentState] = None,
+                         intent: Optional[dict] = None) -> bool:
+    """Whether a generated/complement candidate can be appended without food conflict.
+
+    用户明确锁定的锚点不在这里强删，但普通补点/替换点必须遵守餐饮节奏。
+    """
+    if state is not None and is_locked_route_place(candidate, state, intent):
+        return True
+    return candidate_food_conflict(candidate, existing_places) is None
+
+
+def append_food_safe_route_places(base: list[str], additions: list[str], state: Optional[AgentState] = None,
+                                  intent: Optional[dict] = None, limit: Optional[int] = None,
+                                  notes: Optional[list[str]] = None) -> list[str]:
+    """Append route places while enforcing food sequence constraints."""
+    result = unique_preserve_order([p for p in (base or []) if p])
+    for place in additions or []:
+        place = str(place or "").strip()
+        if not place:
+            continue
+        if any(same_route_place(place, old) or same_route_place(old, place) for old in result):
+            continue
+        reason = candidate_food_conflict(place, result)
+        if reason and not (state is not None and is_locked_route_place(place, state, intent)):
+            if notes is not None:
+                notes.append(f"已跳过“{place}”：{reason}。")
+            continue
+        result.append(place)
+        if limit and len(result) >= limit:
+            break
+    return result
+
+
+def final_sanitize_route_places(places: list[str], state: AgentState, intent: dict) -> tuple[list[str], list[str]]:
+    """Final hard guard before schedule rendering.
+
+    前面的 RAG、补点、快捷调整、软排序都可能修改 places；因此必须在生成
+    structured_plan.schedule 前再次强制清理，防止“烤肉→羊肉”或“咖啡→甜品”
+    这类连续餐饮结构进入前端。
+    """
+    notes = []
+    result = []
+    for place in unique_preserve_order([p for p in (places or []) if p and p != "待确认地点"]):
+        locked = is_locked_route_place(place, state, intent)
+        reason = candidate_food_conflict(place, result)
+        if reason and not locked:
+            notes.append(f"最终餐饮节奏校验：已移除“{place}”，{reason}。")
+            continue
+        if reason and locked:
+            notes.append(f"餐饮节奏提示：用户锁定地点“{place}”与前一餐饮点存在冲突，系统保留该锚点并优先调整其他地点。")
+        result.append(place)
+
+    result = preserve_route_anchors(result, state, intent)
+    return result, unique_preserve_order(notes)
 
 def persist_amap_poi_if_needed(poi: dict, spec: dict) -> str:
     """把高德 POI 写入当前地点表，并同步本模块持有的 _df 引用。"""
@@ -2203,6 +2328,157 @@ def long_route_segment_warnings(route_segments: list[dict]) -> list[str]:
     return warnings
 
 
+def place_effort_level(place_name: str) -> int:
+    """Estimate physical intensity of a place on a 1-5 scale for feasibility scoring.
+
+    This function only evaluates the final route. It does not change route generation,
+    replace places, or add frontend Tips.
+    """
+    name = str(place_name or "")
+    lowered = name.lower()
+    row = _find_place(place_name)
+    place_type = ""
+    sub_type = ""
+    if row is not None:
+        place_type = str(row.get("地点类型", "") or "").strip()
+        sub_type = str(row.get("sub_type", "") or "").strip()
+
+    role = place_role(place_name)
+    if role in {"meal", "light_food"}:
+        return 1
+
+    if sub_type in {"theme_park", "sports"} or any(
+            term in name for term in ["探险", "森林探险", "乐园", "游乐", "运动", "攀岩", "徒步", "骑行"]
+    ):
+        return 5
+    if sub_type in {"street_walk", "park"} or any(
+            term in name for term in ["步行街", "步道", "滨江", "绿道", "森林", "公园", "古镇", "街区", "citywalk"]
+    ):
+        return 3
+    if sub_type in {"museum", "art_exhibition", "shopping", "cinema", "spa_relax"}:
+        return 2
+    if place_type == "activity":
+        return 3
+    if place_type in {"attraction", "leisure", "sports"}:
+        return 3
+    if any(term in lowered for term in ["mall", "plaza", "museum", "gallery"]):
+        return 2
+    return 2
+
+
+def place_is_rest_break(place_name: str) -> bool:
+    """Return True for places that can reasonably act as a rest or recovery stop."""
+    role = place_role(place_name)
+    if role in {"meal", "light_food"}:
+        return True
+    name = str(place_name or "")
+    row = _find_place(place_name)
+    sub_type = str(row.get("sub_type", "") or "").strip() if row is not None else ""
+    return sub_type in {"shopping", "spa_relax", "cinema"} or any(
+        term in name for term in ["咖啡", "甜品", "茶", "餐厅", "饭店", "商场", "广场", "汤泉", "温泉", "影院"]
+    )
+
+
+def evaluate_route_feasibility(structured_plan: dict, intent: Optional[dict] = None,
+                               route_segments: Optional[list[dict]] = None) -> dict:
+    """Evaluate human feasibility of the final route without changing the route.
+
+    Returns only:
+    - intensity_score: 0-100, higher means the route is easier to execute.
+    - warnings: feasibility concerns for backend/API inspection.
+    """
+    schedule = [
+        item for item in (structured_plan or {}).get("schedule", []) or []
+        if isinstance(item, dict) and item.get("place")
+    ]
+    segments = route_segments if route_segments is not None else ((structured_plan or {}).get("route_segments") or [])
+    intent = intent or {}
+    modes = set(intent.get("adjustment_modes") or [])
+    if intent.get("adjustment_mode"):
+        modes.add(intent.get("adjustment_mode"))
+
+    warnings = []
+    penalty = 0
+
+    if not schedule:
+        return {"intensity_score": 0, "warnings": ["当前结构化方案没有可评估的行程地点。"]}
+    if len(schedule) == 1:
+        return {"intensity_score": 45, "warnings": ["当前方案只有1个地点，可行性压力不大，但路线完整度不足。"]}
+
+    places = [str(item.get("place") or "") for item in schedule]
+    efforts = [place_effort_level(place) for place in places]
+    rest_flags = [place_is_rest_break(place) for place in places]
+
+    high_effort_count = sum(1 for value in efforts if value >= 4)
+    walking_like_count = sum(1 for value in efforts if value >= 3)
+    rest_count = sum(1 for flag in rest_flags if flag)
+
+    if len(schedule) >= 3 and rest_count == 0 and walking_like_count >= 2:
+        warnings.append("路线里连续游玩/步行型地点较多，但没有明显吃饭、咖啡或商场休息点，实际走起来可能偏累。")
+        penalty += 14
+    if high_effort_count >= 2:
+        warnings.append("方案包含多个高体力活动点，建议后续在中间插入餐饮/咖啡休息，或减少一个高强度项目。")
+        penalty += 18
+
+    for idx in range(len(places) - 1):
+        current_place, next_place = places[idx], places[idx + 1]
+        current_effort, next_effort = efforts[idx], efforts[idx + 1]
+        if current_effort >= 4 and next_effort >= 3 and not rest_flags[idx + 1]:
+            warnings.append(f"{current_place} 后面紧接 {next_place}，连续强度偏高，建议中间安排简餐/咖啡/室内休息。")
+            penalty += 12
+        elif current_effort >= 3 and next_effort >= 3 and not rest_flags[idx] and not rest_flags[idx + 1]:
+            warnings.append(f"{current_place} 到 {next_place} 都偏步行/游玩属性，连续逛可能比较累。")
+            penalty += 8
+
+    total_distance_m = 0
+    long_segment_count = 0
+    very_long_segment_count = 0
+    for seg in segments or []:
+        dist = _safe_int(seg.get("distance_m"), 0)
+        if dist <= 0:
+            continue
+        total_distance_m += dist
+        from_name = seg.get("from") or "上一站"
+        to_name = seg.get("to") or "下一站"
+        distance_text = seg.get("distance_text") or format_distance(dist)
+        if dist >= 30000:
+            warnings.append(f"{from_name} 到 {to_name} 转场约{distance_text}，这一段明显偏远，实际执行会比较折腾。")
+            very_long_segment_count += 1
+            penalty += 16
+        elif dist >= 18000:
+            warnings.append(f"{from_name} 到 {to_name} 转场约{distance_text}，距离偏长，建议后续优先换成同区域备选。")
+            long_segment_count += 1
+            penalty += 9
+
+    if total_distance_m >= 65000:
+        warnings.append(f"整条路线核心转场合计约{format_distance(total_distance_m)}，半日行程可能太赶。")
+        penalty += 16
+    elif total_distance_m >= 45000:
+        warnings.append(f"整条路线核心转场合计约{format_distance(total_distance_m)}，建议确认是否接受较多通勤。")
+        penalty += 9
+
+    if "less_walk" in modes and walking_like_count >= 2:
+        warnings.append("用户选择了少走路，但路线中仍有多个步行/户外游玩型地点，后续可进一步降低步行强度。")
+        penalty += 12
+    if "nearer" in modes and (long_segment_count or very_long_segment_count):
+        warnings.append("用户选择了换近一点，但当前路线仍存在偏长转场，后续可继续围绕最新锚点收缩范围。")
+        penalty += 10
+    if len(schedule) >= 4 and walking_like_count >= 3:
+        warnings.append("路线站点数和步行型地点都偏多，4-6小时内执行可能会比较赶。")
+        penalty += 10
+
+    if rest_count >= 1 and walking_like_count >= 1:
+        penalty -= 6
+    if len(schedule) <= 3 and high_effort_count <= 1:
+        penalty -= 4
+
+    score = max(0, min(100, 100 - penalty))
+    return {
+        "intensity_score": int(score),
+        "warnings": unique_preserve_order(warnings),
+    }
+
+
 def fallback_complement_places_from_local_table(anchor_name: str, existing_places: list[str], intent: dict, limit: int) -> list[str]:
     """Cheap local-table fallback when Amap cannot add enough nearby POIs.
 
@@ -2230,10 +2506,7 @@ def fallback_complement_places_from_local_table(anchor_name: str, existing_place
             score += 8
         if anchor_key and anchor_key in normalize_place_text(f"{name} {tags}"):
             score += 60
-        if role == "meal" and any(place_role(old) == "meal" for old in existing_places):
-            score -= 80
-        if role == "light_food" and any(place_role(old) == "light_food" for old in existing_places):
-            score -= 40
+        # 餐饮冲突在候选入池前硬过滤；这里不再用扣分兜底，避免候选不足时仍补入第二顿正餐/连续咖啡。
         try:
             score -= float(row.get("最低价格", 0) or 0) / 50
         except (TypeError, ValueError):
@@ -2248,12 +2521,14 @@ def fallback_complement_places_from_local_table(anchor_name: str, existing_place
             continue
         if any(same_route_place(name, old) for old in existing_places):
             continue
-        if place_role(name) in {"meal", "light_food"} and any(same_food_brand(name, old) for old in existing_places + result):
+        if not can_append_food_safe(name, existing_places + result):
             continue
         rows.append((score_row(row), name))
 
     rows.sort(key=lambda item: item[0])
     for _, name in rows:
+        if not can_append_food_safe(name, existing_places + result):
+            continue
         result.append(name)
         existing_keys.add(normalize_place_text(name))
         if len(result) >= limit:
@@ -2301,7 +2576,7 @@ def ensure_minimum_route_places(
         local_places = nearby_existing_places_from_local_pool(anchor, result + [anchor_name], intent, limit=needed)
         if local_places:
             before = len(result)
-            result = append_unique_route_places(result, local_places, max_stops)
+            result = append_food_safe_route_places(result, local_places, state, intent, max_stops, notes)
             if len(result) > before:
                 notes.append(f"路线不足 {min_stops} 站，已优先从本地地点表围绕“{anchor}”补充：{'、'.join(result[before:])}。")
 
@@ -2317,7 +2592,7 @@ def ensure_minimum_route_places(
         from_route_plan = nearby_route_plan_places(anchor, route_plan_candidates, result + [anchor_name], limit=needed)
         if from_route_plan:
             before = len(result)
-            result = append_unique_route_places(result, from_route_plan, max_stops)
+            result = append_food_safe_route_places(result, from_route_plan, state, intent, max_stops, notes)
             if len(result) > before:
                 notes.append(f"路线不足 {min_stops} 站，已从路线草稿中补充：{'、'.join(result[before:])}。")
 
@@ -2336,7 +2611,7 @@ def ensure_minimum_route_places(
             amap_places = find_nearby_complement_places(anchor, result + [anchor_name], intent, limit=needed)
             if amap_places:
                 before = len(result)
-                result = append_unique_route_places(result, amap_places[:needed], max_stops)
+                result = append_food_safe_route_places(result, amap_places[:needed], state, intent, max_stops, notes)
                 if len(result) > before:
                     notes.append(f"本地表和路线草稿仍不足 {min_stops} 站，已少量调用高德围绕“{anchor}”补充：{'、'.join(result[before:])}。")
 
@@ -2346,7 +2621,7 @@ def ensure_minimum_route_places(
         fallback_places = fallback_complement_places_from_local_table(fallback_anchor, result + [anchor_name], intent, needed)
         if fallback_places:
             before = len(result)
-            result = append_unique_route_places(result, fallback_places, max_stops)
+            result = append_food_safe_route_places(result, fallback_places, state, intent, max_stops, notes)
             if len(result) > before:
                 notes.append(f"路线仍不足 {min_stops} 站，已用本地地点表兜底补充：{'、'.join(result[before:])}。")
 
@@ -2356,9 +2631,11 @@ def ensure_minimum_route_places(
         else:
             result = move_destination_anchor_to_start(result, anchor_name)
 
+    result, final_food_notes = final_sanitize_route_places(result, state, intent)
+    notes.extend(final_food_notes)
     if len(result) < min_stops:
         notes.append(f"警告：已尝试补点，但最终仍只有 {len(result)} 站；请检查高德 Key、地点表内容或放宽筛选条件。")
-    return result[:max_stops], notes
+    return result[:max_stops], unique_preserve_order(notes)
 
 def find_nearby_complement_places(anchor_name: str, existing_places: list[str], intent: dict, limit: int = 2) -> list[str]:
     """少量调用高德，补充真实地图附近的非重复地点；只在本地/RAG不足时使用。"""
@@ -2403,12 +2680,7 @@ def find_nearby_complement_places(anchor_name: str, existing_places: list[str], 
             key = normalize_place_text(name)
             if not key or key in existing_keys:
                 continue
-            if main_role == "meal" and place_role(name) == "meal":
-                continue
-            if main_role == "light_food" and place_role(name) == "light_food":
-                continue
-            if place_role(name) in {"meal", "light_food"} and any(
-                    same_food_brand(name, old) for old in existing_places + result):
+            if not can_append_food_safe(name, existing_places + result):
                 continue
             result.append(persist_amap_poi_if_needed(poi, spec))
             existing_keys.add(key)
@@ -2481,9 +2753,7 @@ def nearby_existing_places_from_local_pool(anchor_name: str, existing_places: li
         role = place_role(name)
         if role not in wanted_roles:
             continue
-        if role == "meal" and any(place_role(old) == "meal" for old in existing_places):
-            continue
-        if role in {"meal", "light_food"} and any(same_food_brand(name, old) for old in existing_places):
+        if not can_append_food_safe(name, existing_places):
             continue
         try:
             available_bonus = 10 if row_has_seat(row) else 0
@@ -2504,6 +2774,8 @@ def nearby_existing_places_from_local_pool(anchor_name: str, existing_places: li
         key = normalize_place_text(name)
         if not key or key in existing_keys:
             continue
+        if not can_append_food_safe(name, existing_places + result):
+            continue
         result.append(name)
         existing_keys.add(key)
         if len(result) >= limit:
@@ -2521,8 +2793,7 @@ def nearby_route_plan_places(anchor_name: str, candidate_names: list[str], exist
         key = normalize_place_text(name)
         if not key or key in existing_keys:
             continue
-        if place_role(name) in {"meal", "light_food"} and any(
-                same_food_brand(name, old) for old in existing_places + result):
+        if not can_append_food_safe(name, existing_places + result):
             continue
         result.append(name)
         existing_keys.add(key)
@@ -2954,11 +3225,11 @@ def apply_quick_adjustment_to_places(places: list[str], state: AgentState, inten
                 base = adjusted[:1]
             needed = max(0, min(target_count, _safe_int(os.getenv("MAX_ROUTE_STOPS", "4"), 4)) - len(base))
             local_nearby = nearby_existing_places_from_local_pool(base_anchor, base + [base_anchor], intent, limit=needed)
-            new_places = append_unique_route_places(base, local_nearby, None)
+            new_places = append_food_safe_route_places(base, local_nearby, state, intent, None, notes)
             if len(new_places) < target_count:
                 amap_needed = max(0, target_count - len(new_places))
                 amap_nearby = find_nearby_complement_places(base_anchor, new_places + [base_anchor], intent, limit=amap_needed)
-                new_places = append_unique_route_places(new_places, amap_nearby, None)
+                new_places = append_food_safe_route_places(new_places, amap_nearby, state, intent, None, notes)
             if not new_places:
                 new_places = adjusted
             adjusted = preserve_route_anchors(new_places, state, intent)
@@ -3042,8 +3313,11 @@ def apply_quick_adjustment_to_places(places: list[str], state: AgentState, inten
 
     adjusted, sanitize_notes = sanitize_structured_places(adjusted, intent)
     adjusted = preserve_route_anchors(adjusted, state, intent)
+    final_food_places, final_food_notes = final_sanitize_route_places(adjusted, state, intent)
+    adjusted = preserve_route_anchors(final_food_places, state, intent)
     notes.extend(sanitize_notes)
-    return adjusted, notes
+    notes.extend(final_food_notes)
+    return adjusted, unique_preserve_order(notes)
 
 def detect_adjustment_conflicts(places: list[str], state: AgentState, intent: dict) -> list[str]:
     """Return user-visible conflicts for quick adjustment combinations."""
@@ -4655,7 +4929,9 @@ def route_distance_planner(state: AgentState) -> AgentState:
         route_distance_info = (
             f"{route_distance_info}\n少走路模式：除站内/店内必要步行外，优先地铁、骑行或打车转场；不建议安排长距离步行串联。"
         )
+    feasibility_report = evaluate_route_feasibility(structured_plan, intent, route_segments) if structured_plan else {"intensity_score": 0, "warnings": ["结构化方案为空，无法评估路线强度。"]}
     if structured_plan:
+        structured_plan["feasibility_report"] = feasibility_report
         structured_plan.setdefault("tool_facts", {})
         structured_plan["tool_facts"]["route_distance_info"] = route_distance_info
         structured_plan["tool_facts"]["coupon_summary"] = coupon_info.get("summary", "")
@@ -4670,6 +4946,7 @@ def route_distance_planner(state: AgentState) -> AgentState:
         "route_distance_info": route_distance_info,
         "route_map": route_map,
         "coupon_info": coupon_info,
+        "feasibility_report": feasibility_report,
         "structured_plan": structured_plan or state.get("structured_plan"),
     }
 
@@ -5105,12 +5382,24 @@ def build_structured_plan(state: AgentState) -> AgentState:
     places, soft_order_notes = soft_optimize_route_order(places, state, intent)
     structure_notes.extend(soft_order_notes)
 
+    places, final_food_notes = final_sanitize_route_places(places, state, intent)
+    structure_notes.extend(final_food_notes)
+    if len(places) < min_route_stops:
+        places, refill_food_safe_notes = ensure_minimum_route_places(
+            places, state, intent, anchor_name, anchor_mode, min_route_stops, max_route_stops
+        )
+        structure_notes.extend(refill_food_safe_notes)
+        places, final_food_notes = final_sanitize_route_places(places, state, intent)
+        structure_notes.extend(final_food_notes)
+
     # 最终保险：无论前面 RAG、历史 user_input、快捷调整怎样改动，
     # 旧目的地都不能留在方案里；最新目的地必须作为当前锚点出现。
     anchor_name, anchor_mode = planning_anchor_for_intent(intent, collected)
     places = filter_replaced_destinations_from_places(places, state, anchor_name)
     if anchor_mode == "destination" and anchor_name:
         places = move_destination_anchor_to_end(places, anchor_name) if bool(collected.get("_departure_explicit")) else move_destination_anchor_to_start(places, anchor_name)
+    places, final_food_notes = final_sanitize_route_places(places, state, intent)
+    structure_notes.extend(final_food_notes)
 
     if not places and not sync_amap_complement_enabled():
         static_fallback = anchor_name or intent.get("location") or collected.get("departure")
@@ -5157,6 +5446,8 @@ def build_structured_plan(state: AgentState) -> AgentState:
             structure_notes.extend(fallback_min_notes)
             structure_notes.append(f"本地/RAG候选为空，已改用锚点“{fallback_anchor}”附近高德候选“{fallback}”，并继续补齐多站路线。")
 
+    places, final_food_notes = final_sanitize_route_places(places, state, intent)
+    structure_notes.extend(final_food_notes)
     route_places_for_schedule = places[:max_route_stops]
     slots = build_schedule_slots(collected, intent, max(1, len(route_places_for_schedule)))
     schedule = []
@@ -5205,6 +5496,7 @@ def build_structured_plan(state: AgentState) -> AgentState:
         "rules": [
             "structured_plan.schedule 是最终文案唯一主路线",
             "同一条 4-6 小时路线最多安排一顿正餐",
+            "最终 schedule 前会再次清理连续正餐和连续咖啡/甜品/轻食",
             "允许正餐后接散步/咖啡/轻量体验",
             "高德 POI 真实检索到的附近地点可以进入 structured_plan",
             "快捷按钮必须改动 structured_plan，而不是只改文案",
@@ -5589,6 +5881,7 @@ def result_formatter(state: AgentState) -> AgentState:
             "coupon_info": coupon_info,
             "structured_plan": structured_plan,
             "validation_report": validation_report,
+            "feasibility_report": state.get("feasibility_report") or structured_plan.get("feasibility_report") or evaluate_route_feasibility(structured_plan, intent),
             "reservation_options": reservation_options,
         }
 
@@ -5717,6 +6010,7 @@ def result_formatter(state: AgentState) -> AgentState:
         "coupon_info": coupon_info,
         "structured_plan": structured_plan,
         "validation_report": validation_report,
+        "feasibility_report": state.get("feasibility_report") or structured_plan.get("feasibility_report") or evaluate_route_feasibility(structured_plan, intent),
         "reservation_options": reservation_options,
     }
 
