@@ -279,17 +279,122 @@ def structured_schedule_places(state: dict) -> list[str]:
 
 
 def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
-    """缓存用户明确点名的核心地点，并锁定明确起点/终点。
+    """缓存用户明确点名的核心地点，并锁定/覆盖明确起点和终点。
 
-    重新生成、换近一点、换便宜一点等反馈只允许改中间站；除非用户明确
-    说“出发地/目的地换成……”，否则不改已确认的起点和终点。
+    关键规则：
+    - 后续“换近一点/换便宜一点/换室内/重新生成”不改出发地、目的地、单中心锚点。
+    - 后续“目的地换成X/更换目的地为X/终点改为X”只覆盖目的地；旧目的地从 locked_places 中移除。
+    - 后续“出发地换成X/起点改为X”只覆盖出发地。
     """
     locked = list(state.get("locked_places") or [])
-    intent = state.get("intent") or {}
-    collected = state.get("collected_info") or {}
-    candidate = str(intent.get("location") or collected.get("location") or "").strip()
-    user_text = f"{state.get('user_input', '')} {latest_text or ''}"
+    intent = dict(state.get("intent") or {})
+    collected = dict(state.get("collected_info") or {})
+    text = str(latest_text or "")
+    # 重要：用于判断本轮是否明确点名，只看 latest_text，不能把历史 user_input 拼进来，
+    # 否则旧目的地会因为历史文本仍然存在而被再次锁回去。
+    user_text_for_this_turn = text
 
+    old_fixed_departure = str(
+        state.get("fixed_departure") or collected.get("fixed_departure") or collected.get("departure") or ""
+    ).strip()
+    old_fixed_destination = str(
+        state.get("fixed_destination") or collected.get("fixed_destination") or collected.get("location") or ""
+    ).strip()
+
+    latest_departure_hint = agent_workflow.extract_departure_hint_from_user_text(text)
+    latest_destination_hint = agent_workflow.extract_destination_hint_from_user_text(text)
+    departure_change = bool(latest_departure_hint) and agent_workflow.user_requests_departure_change(text, old_fixed_departure)
+    destination_change = bool(latest_destination_hint) and agent_workflow.user_requests_destination_change(text, old_fixed_destination)
+
+    # 先处理显式起点修改；没有改出发地时必须保留旧出发地。
+    if departure_change:
+        new_departure = str(latest_departure_hint).strip()
+        state["fixed_departure"] = new_departure
+        collected["fixed_departure"] = new_departure
+        collected["departure"] = new_departure
+        collected["_departure_explicit"] = True
+    elif old_fixed_departure:
+        state["fixed_departure"] = old_fixed_departure
+        collected["fixed_departure"] = old_fixed_departure
+        collected["departure"] = old_fixed_departure
+        collected["_departure_explicit"] = True
+
+    # 目的地明确修改：新目的地覆盖旧目的地；旧目的地和更早历史目的地不能继续锁定。
+    if destination_change:
+        new_destination = str(latest_destination_hint).strip()
+        previous_destination_candidates = [
+            old_fixed_destination,
+            state.get("fixed_destination"),
+            collected.get("fixed_destination"),
+            collected.get("location"),
+            intent.get("location"),
+        ]
+        # 如果 locked_places 里有非出发地的旧锚点，通常就是旧目的地或旧路线核心点；换目的地时清掉，
+        # 避免“陆家嘴→迪士尼→上海动物园”时陆家嘴/迪士尼继续混入新方案。
+        for place in locked:
+            if not place:
+                continue
+            if old_fixed_departure and agent_workflow.same_route_place(str(place), old_fixed_departure):
+                continue
+            if agent_workflow.same_route_place(str(place), new_destination):
+                continue
+            previous_destination_candidates.append(place)
+
+        replaced_names = []
+        for place in previous_destination_candidates:
+            name = str(place or "").strip()
+            if not name:
+                continue
+            if agent_workflow.same_route_place(name, new_destination):
+                continue
+            if old_fixed_departure and agent_workflow.same_route_place(name, old_fixed_departure):
+                continue
+            replaced_names.append(name)
+        replaced_names = list(dict.fromkeys(replaced_names))
+        replaced_keys = {
+            agent_workflow.normalize_place_text(name)
+            for name in replaced_names
+            if agent_workflow.normalize_place_text(name)
+        }
+        existing_replaced = set(state.get("replaced_destination_keys") or [])
+        state["replaced_destination_keys"] = sorted(existing_replaced | replaced_keys)
+        state["replaced_destinations"] = list(dict.fromkeys(list(state.get("replaced_destinations") or []) + replaced_names))
+        collected["replaced_destination_keys"] = state["replaced_destination_keys"]
+        collected["replaced_destinations"] = state["replaced_destinations"]
+
+        # 只保留原出发地和最新目的地；不要保留旧目的地。
+        kept_locked = []
+        for place in locked:
+            if old_fixed_departure and agent_workflow.same_route_place(str(place), old_fixed_departure):
+                kept_locked.append(place)
+        locked = kept_locked
+        state["fixed_destination"] = new_destination
+        state["active_destination_anchor"] = new_destination
+        collected["fixed_destination"] = new_destination
+        collected["active_destination_anchor"] = new_destination
+        collected["location"] = new_destination
+        collected["_location_explicit"] = True
+        collected["center_anchor"] = new_destination
+        intent["location"] = new_destination
+        # 清掉容易把旧目的地带回来的历史候选：上一版目的地、上一版路线点、avoid/previous_plan_places 里的旧目的地。
+        state["avoid_places"] = [p for p in (state.get("avoid_places") or []) if not agent_workflow.is_replaced_destination_place(str(p), {**state, "collected_info": collected}, new_destination)]
+        cleaned_previous = []
+        for route in (state.get("previous_plan_places") or []):
+            cleaned_previous.append([p for p in route if not agent_workflow.is_replaced_destination_place(str(p), {**state, "collected_info": collected}, new_destination)])
+        state["previous_plan_places"] = cleaned_previous
+        if new_destination not in locked:
+            locked.append(new_destination)
+    elif old_fixed_destination and agent_workflow.is_concrete_location_anchor(old_fixed_destination):
+        state["fixed_destination"] = old_fixed_destination
+        state["active_destination_anchor"] = old_fixed_destination
+        collected["fixed_destination"] = old_fixed_destination
+        collected["active_destination_anchor"] = old_fixed_destination
+        collected["location"] = old_fixed_destination
+        collected["_location_explicit"] = True
+        if old_fixed_destination not in locked:
+            locked.append(old_fixed_destination)
+
+    # 首轮或非显式修改时，从已收集信息中建立锁定。
     departure = str(collected.get("departure") or intent.get("departure") or "").strip()
     if departure and collected.get("_departure_explicit"):
         state["fixed_departure"] = departure
@@ -299,29 +404,41 @@ def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
     destination = str(collected.get("location") or intent.get("location") or "").strip()
     if destination and collected.get("_location_explicit") and agent_workflow.is_concrete_location_anchor(destination):
         state["fixed_destination"] = destination
+        state["active_destination_anchor"] = destination
         collected["fixed_destination"] = destination
+        collected["active_destination_anchor"] = destination
         collected["center_anchor"] = destination
         if destination not in locked:
             locked.append(destination)
 
-    user_mentioned_candidate = bool(candidate) and agent_workflow.place_matches_text(candidate, user_text)
+    # 通用显式地点锁定：换目的地的这一轮不能用旧 intent/location 从历史里再锁回旧目的地。
+    if destination_change:
+        candidate = str(collected.get("location") or "").strip()
+    elif state.get("fixed_destination") or collected.get("fixed_destination"):
+        candidate = str(collected.get("fixed_destination") or state.get("fixed_destination") or collected.get("location") or "").strip()
+    else:
+        candidate = str(intent.get("location") or collected.get("location") or "").strip()
+    user_mentioned_candidate = bool(candidate) and agent_workflow.place_matches_text(candidate, user_text_for_this_turn)
     if (
         candidate
         and candidate != "待确认地点"
-        and intent.get("explicit_place_match") is True
+        and (intent.get("explicit_place_match") is True or collected.get("_location_explicit"))
         and user_mentioned_candidate
     ):
         if candidate not in locked:
             locked.append(candidate)
 
-    text = str(latest_text or "")
-    kept = []
     persistent_anchor_keys = {agent_workflow.normalize_place_text(p) for p in [
         collected.get("fixed_departure"), collected.get("fixed_destination"), collected.get("center_anchor")
     ] if p}
+    replaced_keys = set(state.get("replaced_destination_keys") or []) | set(collected.get("replaced_destination_keys") or [])
+    current_destination_key = agent_workflow.normalize_place_text(collected.get("fixed_destination") or "")
+    kept = []
     for place in locked:
         place_key = agent_workflow.normalize_place_text(place)
-        if place_key not in persistent_anchor_keys and not agent_workflow.place_matches_text(place, user_text) and not agent_workflow.same_route_place(place, destination):
+        if place_key in replaced_keys and place_key != current_destination_key:
+            continue
+        if place_key not in persistent_anchor_keys and not agent_workflow.place_matches_text(place, user_text_for_this_turn) and not agent_workflow.same_route_place(place, destination):
             continue
         revoke_patterns = [
             f"不想去{place}", f"不要{place}", f"换掉{place}", f"不去{place}", f"{place}不要了",
@@ -330,10 +447,23 @@ def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
         if any(pattern in text for pattern in revoke_patterns):
             continue
         kept.append(place)
+
+    # 如果本轮明确换目的地，旧目的地绝不能继续留在 locked_places。
+    if destination_change:
+        current_destination = str(collected.get("fixed_destination") or "").strip()
+        # 只保留原出发地和最新目的地。任何旧目的地/旧路线核心点都不能继续锁定。
+        strict_kept = []
+        for p in kept:
+            if old_fixed_departure and agent_workflow.same_route_place(str(p), old_fixed_departure):
+                strict_kept.append(p)
+            elif current_destination and agent_workflow.same_route_place(str(p), current_destination):
+                strict_kept.append(current_destination)
+        kept = strict_kept or ([current_destination] if current_destination else [])
+
+    state["intent"] = intent
     state["locked_places"] = list(dict.fromkeys(kept))
     state["collected_info"] = collected
     return state
-
 
 QUICK_ADJUSTMENT_MAP = {
     "换近一点": "nearer",
@@ -820,6 +950,7 @@ async def _plan_impl(req: PlanRequest, session_id: str):
             latest_user_input=req.user_input,
             fixed_departure="",
             fixed_destination="",
+            active_destination_anchor="",
             node_timings={},
             awaiting_departure_confirmation=False,
             info_followup_asked=False,

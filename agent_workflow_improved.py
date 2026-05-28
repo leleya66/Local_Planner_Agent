@@ -2013,6 +2013,63 @@ def place_price_detail(place_name: str) -> dict:
     return {"price_min": low, "price_max": high, "price_text": text}
 
 
+def replaced_destination_key_set(state: AgentState) -> set:
+    """Keys of old destination anchors that must not be carried into a new plan.
+
+    多轮修改目的地时，旧目的地可能已经进入 locked_places、route_plan 草稿
+    或历史 user_input。这里统一记录要排除的旧目的地，避免“陆家嘴→迪士尼→
+    上海动物园”时旧目的地继续混入方案。
+    """
+    collected = (state or {}).get("collected_info") or {}
+    raw_keys = []
+    raw_keys.extend((state or {}).get("replaced_destination_keys") or [])
+    raw_keys.extend(collected.get("replaced_destination_keys") or [])
+    raw_names = []
+    raw_names.extend((state or {}).get("replaced_destinations") or [])
+    raw_names.extend(collected.get("replaced_destinations") or [])
+    for name in raw_names:
+        key = normalize_place_text(name)
+        if key:
+            raw_keys.append(key)
+    return {str(k).strip() for k in raw_keys if str(k).strip()}
+
+
+def is_replaced_destination_place(place: str, state: AgentState, current_anchor: str = "") -> bool:
+    """Return True when a place is an old destination anchor that must be removed.
+
+    不能只做 normalize 后的完全相等，因为旧目的地可能以“迪士尼”、
+    “上海迪士尼度假区”等不同名字进入 locked_places / RAG 草稿。
+    """
+    place = str(place or "").strip()
+    if not place:
+        return False
+    if current_anchor and same_route_place(place, current_anchor):
+        return False
+    key = normalize_place_text(place)
+    replaced_keys = replaced_destination_key_set(state)
+    if key and key in replaced_keys:
+        return True
+    collected = (state or {}).get("collected_info") or {}
+    replaced_names = []
+    replaced_names.extend((state or {}).get("replaced_destinations") or [])
+    replaced_names.extend(collected.get("replaced_destinations") or [])
+    for old in replaced_names:
+        old = str(old or "").strip()
+        if old and not (current_anchor and same_route_place(old, current_anchor)) and same_route_place(place, old):
+            return True
+    return False
+
+
+def filter_replaced_destinations_from_places(places: list[str], state: AgentState, current_anchor: str = "") -> list[str]:
+    """Remove old destination anchors while preserving the latest requested destination."""
+    filtered = []
+    for place in places or []:
+        if is_replaced_destination_place(str(place or ""), state, current_anchor):
+            continue
+        filtered.append(place)
+    return unique_preserve_order([p for p in filtered if p])
+
+
 def locked_route_place_keys(state: AgentState, intent: Optional[dict] = None) -> set:
     """需要跨轮次保持不变的路线锚点/明确地点。
 
@@ -2034,7 +2091,23 @@ def locked_route_place_keys(state: AgentState, intent: Optional[dict] = None) ->
     anchor_name, anchor_mode = planning_anchor_for_intent(intent, collected)
     if anchor_name and anchor_mode in {"destination", "departure"}:
         anchors.append(anchor_name)
-    return {normalize_place_text(p) for p in anchors if p and normalize_place_text(p)}
+    replaced_keys = replaced_destination_key_set(state)
+    current_destination_key = normalize_place_text(
+        (state or {}).get("fixed_destination")
+        or collected.get("fixed_destination")
+        or collected.get("location")
+        or intent.get("location")
+        or ""
+    )
+    result = set()
+    for p in anchors:
+        key = normalize_place_text(p)
+        if not key:
+            continue
+        if key in replaced_keys and key != current_destination_key:
+            continue
+        result.add(key)
+    return result
 
 
 def is_locked_route_place(place: str, state: AgentState, intent: Optional[dict] = None) -> bool:
@@ -2051,8 +2124,8 @@ def preserve_route_anchors(places: list[str], state: AgentState, intent: Optiona
     """把明确目的地放回正确位置，避免快捷调整/补点把中心锚点挤掉。"""
     intent = intent or {}
     collected = state.get("collected_info") or {}
-    result = unique_preserve_order([p for p in places if p])
     anchor_name, anchor_mode = planning_anchor_for_intent(intent, collected)
+    result = filter_replaced_destinations_from_places(places, state, anchor_name)
     if anchor_mode == "destination" and anchor_name:
         if bool(collected.get("_departure_explicit")):
             result = move_destination_anchor_to_end(result, anchor_name)
@@ -3402,10 +3475,10 @@ def extract_location_hint_from_user_text(user_input: str) -> Optional[str]:
             if destination_context or not departure_context:
                 return district
 
-    suffixes = "植物园|公园|古镇|乐园|博物馆|美术馆|展览馆|广场|商场|街区|寺庙|寺|园区|步道|滨江|外滩|沙滩|海滩|海湾"
+    suffixes = "动物园|植物园|公园|古镇|乐园|大学城|景区|博物馆|美术馆|展览馆|广场|商场|街区|寺庙|寺|园区|步道|滨江|外滩|沙滩|海滩|海湾"
     patterns = [
-        rf"(?:想去|要去|去|逛|玩|安排|目的地是)([^，。！？、\s]{{2,24}}(?:{suffixes}))",
-        rf"([^，。！？、\s]{{2,24}}(?:{suffixes}))",
+        rf"(?:想去|要去|去|逛|玩|安排|目的地是)([^，。！？、/／\s]{{2,24}}(?:{suffixes}))",
+        rf"([^，。！？、/／\s]{{2,24}}(?:{suffixes}))",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -3417,12 +3490,23 @@ def extract_location_hint_from_user_text(user_input: str) -> Optional[str]:
 
 
 def clean_location_hint_candidate(candidate: str) -> str:
-    """Clean route verbs accidentally captured with a location, e.g. “松江玩” -> “松江”."""
+    """Clean route verbs accidentally captured with a location, e.g. “松江玩” -> “松江”.
+
+    多轮修改里用户常写“更换目的地为松江大学城/换近一点”。这里必须只保留
+    “松江大学城”，不能把“/换近一点”吞进地点名，也不能把“松江大学城”简化成“松江”。
+    """
     text = str(candidate or "").strip()
     if not text:
         return ""
+    # 先切掉快捷调整或后半句，避免“松江大学城/换近一点”成为一个假地点。
+    text = re.split(r"[/／,，。！？；;\n]", text, maxsplit=1)[0].strip()
+    text = re.sub(r"(换近一点|换便宜一点|换室内|换成室内|优先有团购|少走路|重新生成|再来一版)$", "", text).strip()
+    # “松江大学城/浦东新区/上海野生动物园”这类完整地名应优先保留，不要被行政区短词截断。
+    strong_suffixes = ("大学城", "动物园", "植物园", "迪士尼", "乐园", "博物馆", "美术馆", "展览馆", "古镇")
+    if any(text.endswith(suffix) for suffix in strong_suffixes):
+        return text
     for district in sorted(SHANGHAI_DISTRICT_TERMS, key=len, reverse=True):
-        if text == district or text.startswith(district):
+        if text == district:
             return district
     text = re.sub(r"(附近|周边|一带|那边|这边)$", "", text).strip()
     text = re.sub(r"(轻松逛吃|逛吃|吃喝玩乐|吃喝|玩乐|玩|逛|走走|散步|吃饭|吃东西|看看|打卡)$", "", text).strip()
@@ -3445,8 +3529,8 @@ def extract_departure_hint_from_user_text(user_input: str) -> Optional[str]:
     """规则兜底抽取“从 X 出发/起点 X”。"""
     text = str(user_input or "")
     patterns = [
-        r"(?:从|出发地是|起点是|起点在)([^，。！？；;、\s]{2,24}?)(?:出发|开始|走|$|，|。|！|？|；|;)",
-        r"([^，。！？；;、\s]{2,24}?)(?:出发)",
+        r"(?:从|出发地是|起点是|起点在)([^，。！？；;、/／\s]{2,24}?)(?:出发|开始|走|$|，|。|！|？|；|;)",
+        r"([^，。！？；;、/／\s]{2,24}?)(?:出发)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -3459,11 +3543,20 @@ def extract_departure_hint_from_user_text(user_input: str) -> Optional[str]:
 
 
 def extract_destination_hint_from_user_text(user_input: str) -> Optional[str]:
-    """规则兜底抽取“到 X / 目的地 X / 想去 X”。"""
+    """规则兜底抽取“到 X / 目的地 X / 想去 X / 目的地换成 X”。
+
+    注意：多轮修改时，latest_user_input 里常见“目的地换成陆家嘴”、
+    “不去田子坊了，改成陆家嘴”。这些必须覆盖旧目的地，不能被历史
+    user_input 里的旧目的地干扰。
+    """
     text = str(user_input or "")
-    suffixes = "植物园|公园|古镇|乐园|博物馆|美术馆|展览馆|广场|商场|街区|寺庙|寺|园区|步道|滨江|外滩|沙滩|海滩|海湾|新区|区"
+    suffixes = "动物园|植物园|公园|古镇|乐园|大学城|景区|博物馆|美术馆|展览馆|广场|商场|街区|寺庙|寺|园区|步道|滨江|外滩|沙滩|海滩|海湾|新区|区"
     patterns = [
-        rf"(?:到|去到|目的地是|目的地在|想去|要去|去|逛|玩|安排)([^，。！？；;、\s]{{2,24}}(?:{suffixes})?)",
+        # 明确修改目的地：更换目的地为X / 目的地换成X / 终点改为X / 不去A了，改成X
+        rf"(?:更换|修改|调整|重新设置)?(?:目的地|终点|想去的地方|要去的地方)(?:换成|改成|改为|换为|换到|改到|为|是|到)([^，。！？；;、/／\s]{{2,24}}(?:{suffixes})?)",
+        rf"(?:目的地|终点|想去的地方|要去的地方)?(?:换成|改成|改为|换为|换到|改到)([^，。！？；;、/／\s]{{2,24}}(?:{suffixes})?)",
+        rf"(?:不去|不要去|换掉)[^，。！？；;]{{0,18}}(?:了|啦)?[，,、\s]*(?:去|换成|改成|改为|换为|换到|改到)([^，。！？；;、/／\s]{{2,24}}(?:{suffixes})?)",
+        rf"(?:到|去到|目的地是|目的地为|目的地在|终点是|终点为|想去|要去|去|逛|玩|安排)([^，。！？；;、/／\s]{{2,24}}(?:{suffixes})?)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -3491,10 +3584,20 @@ def is_destination_anchor_intent(intent: dict, collected: Optional[dict] = None)
 
 
 def planning_anchor_for_intent(intent: dict, collected: dict) -> tuple[str, str]:
-    """返回规划锚点。destination=围绕目的地；departure=围绕出发地。"""
+    """返回规划锚点。destination=围绕目的地；departure=围绕出发地。
+
+    目的地锚点必须以 collected/fixed_destination 为最高优先级，不能被历史
+    user_input、旧 intent.location 或上一版 structured_plan 里的旧目的地覆盖。
+    """
+    fixed_destination = str((collected or {}).get("fixed_destination") or (collected or {}).get("active_destination_anchor") or "").strip()
+    if fixed_destination and is_concrete_location_anchor(fixed_destination):
+        return fixed_destination, "destination"
+    collected_location = str((collected or {}).get("location") or "").strip()
+    if bool((collected or {}).get("_location_explicit")) and is_concrete_location_anchor(collected_location):
+        return collected_location, "destination"
     if is_destination_anchor_intent(intent, collected):
         return str((intent or {}).get("location") or "").strip(), "destination"
-    departure = str((collected or {}).get("departure") or (intent or {}).get("departure") or "").strip()
+    departure = str((collected or {}).get("fixed_departure") or (collected or {}).get("departure") or (intent or {}).get("departure") or "").strip()
     return departure, "departure"
 
 
@@ -3520,7 +3623,11 @@ def user_requests_destination_change(latest_text: str, current_destination: str 
     """Only unlock a saved destination when the latest message explicitly names a new destination."""
     text = str(latest_text or "")
     hint = extract_destination_hint_from_user_text(text)
-    explicit_change = any(token in text for token in ["换目的地", "改目的地", "目的地改", "目的地换", "不去", "不要去", "换掉"])
+    explicit_change = any(token in text for token in [
+        "换目的地", "改目的地", "目的地改", "目的地换", "目的地换成", "目的地改成",
+        "换终点", "改终点", "终点改", "终点换", "终点换成", "终点改成",
+        "不去", "不要去", "换掉", "改成", "改为", "换成", "换到", "改到"
+    ])
     if not hint:
         return explicit_change
     if not current_destination:
@@ -3529,17 +3636,36 @@ def user_requests_destination_change(latest_text: str, current_destination: str 
 
 
 def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentState) -> tuple[dict, dict, list[str]]:
-    """Preserve user-fixed start/end anchors across regenerate/quick-adjust turns.
+    """Preserve or overwrite user-fixed start/end anchors across multi-turn revisions.
 
-    The frontend can ask for "重新生成" or quick adjustments; those should only change
-    middle stops unless the latest user message explicitly changes start/destination.
+    规则：
+    - 用户只说“换近一点/换便宜一点/换室内/重新生成”时，固定出发地、固定目的地、
+      单中心锚点都不能被历史方案或模型抽取结果改掉。
+    - 用户明确说“目的地换成 X / 终点改为 X”时，只覆盖目的地锚点；如果没有同时
+      修改出发地，原出发地必须保留，不能变成上一版目的地。
+    - 用户明确说“出发地换成 X / 起点改为 X”时，只覆盖出发地。
     """
     fixed_departure = str((state.get("fixed_departure") or collected.get("fixed_departure") or "") or "").strip()
     fixed_destination = str((state.get("fixed_destination") or collected.get("fixed_destination") or "") or "").strip()
-    latest_text = str(state.get("latest_user_input") or state.get("user_input") or "")
+    latest_text = str(state.get("latest_user_input") or "")
+    if not latest_text:
+        latest_text = str(state.get("user_input") or "")
+
+    latest_departure_hint = extract_departure_hint_from_user_text(latest_text)
+    latest_destination_hint = extract_destination_hint_from_user_text(latest_text)
+    departure_change = bool(latest_departure_hint) and user_requests_departure_change(latest_text, fixed_departure)
+    destination_change = bool(latest_destination_hint) and user_requests_destination_change(latest_text, fixed_destination)
     notes = []
 
-    if fixed_departure and not user_requests_departure_change(latest_text, fixed_departure):
+    # 出发地：没有明确修改时，强制保留旧出发地，防止被“上一版目的地”污染。
+    if departure_change:
+        new_departure = str(latest_departure_hint).strip()
+        extracted["departure"] = new_departure
+        collected["departure"] = new_departure
+        collected["fixed_departure"] = new_departure
+        collected["_departure_explicit"] = True
+        notes.append(f"已按最新输入更新固定出发地：{new_departure}。")
+    elif fixed_departure:
         extracted["departure"] = fixed_departure
         collected["departure"] = fixed_departure
         collected["fixed_departure"] = fixed_departure
@@ -3548,23 +3674,61 @@ def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentStat
     elif extracted.get("departure"):
         collected["fixed_departure"] = str(extracted.get("departure")).strip()
 
-    if fixed_destination and not user_requests_destination_change(latest_text, fixed_destination):
+    # 目的地：明确修改目的地时用最新目的地覆盖旧目的地；否则保留旧目的地。
+    if destination_change:
+        new_destination = str(latest_destination_hint).strip()
+        previous_candidates = [
+            fixed_destination,
+            state.get("fixed_destination"),
+            (state.get("intent") or {}).get("location"),
+            collected.get("fixed_destination"),
+            collected.get("location"),
+        ]
+        replaced_names = [
+            str(p).strip() for p in previous_candidates
+            if p and str(p).strip() and not same_route_place(str(p).strip(), new_destination)
+        ]
+        replaced_keys = {normalize_place_text(p) for p in replaced_names if normalize_place_text(p)}
+        existing_replaced = set(state.get("replaced_destination_keys") or [])
+        state["replaced_destination_keys"] = sorted(existing_replaced | replaced_keys)
+        state["replaced_destinations"] = unique_preserve_order(
+            list(state.get("replaced_destinations") or []) + replaced_names
+        )
+        collected["replaced_destination_keys"] = state["replaced_destination_keys"]
+        collected["replaced_destinations"] = state["replaced_destinations"]
+        extracted["location"] = new_destination
+        collected["location"] = new_destination
+        collected["fixed_destination"] = new_destination
+        collected["active_destination_anchor"] = new_destination
+        collected["_location_explicit"] = True
+        collected["center_anchor"] = new_destination
+        state["fixed_destination"] = new_destination
+        state["active_destination_anchor"] = new_destination
+        # 清掉本轮之前可能残留在 state.intent 里的旧目的地，后续节点只能看到最新目的地。
+        if isinstance(state.get("intent"), dict):
+            state["intent"] = {**state.get("intent", {}), "location": new_destination}
+        notes.append(f"已按最新输入更新固定目的地：{new_destination}。")
+        if replaced_names:
+            notes.append(f"已移除旧目的地锚点：{'、'.join(unique_preserve_order(replaced_names))}。")
+    elif fixed_destination:
         extracted["location"] = fixed_destination
         collected["location"] = fixed_destination
         collected["fixed_destination"] = fixed_destination
+        collected["active_destination_anchor"] = fixed_destination
         collected["_location_explicit"] = True
+        state["active_destination_anchor"] = fixed_destination
         notes.append(f"已保留用户固定目的地：{fixed_destination}。")
     elif extracted.get("location") and is_concrete_location_anchor(str(extracted.get("location"))):
         collected["fixed_destination"] = str(extracted.get("location")).strip()
 
     # 单锚点逻辑：只说出发地或只说目的地时，也要跨轮次锁定这个中心锚点。
+    # 如果本轮明确改了目的地，中心锚点必须跟随最新目的地。
     if collected.get("_location_explicit") and collected.get("location"):
         collected["center_anchor"] = str(collected.get("location")).strip()
     elif collected.get("_departure_explicit") and collected.get("departure"):
         collected["center_anchor"] = str(collected.get("departure")).strip()
 
     return extracted, collected, notes
-
 
 def same_anchor_identity(place: str, anchor: str) -> bool:
     """Only treat a route place as the same anchor when it is the exact anchor, not just nearby text."""
@@ -3604,22 +3768,46 @@ def move_destination_anchor_to_start(places: list[str], destination_anchor: str)
 
 
 def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
-    """Deterministically fix high-risk fields after LLM extraction."""
+    """Deterministically fix high-risk fields after LLM extraction.
+
+    这里必须优先看 latest_user_input。多轮修改时 user_input 会包含历史，
+    如果从整段历史抽取，旧目的地（如迪士尼）会覆盖用户最新说的
+    “上海野生动物园/松江大学城”。
+    """
     fixed = dict(intent or {})
     user_input = state.get("user_input", "")
+    latest_text = str(state.get("latest_user_input") or "")
     collected = state.get("collected_info", {}) or {}
 
-    departure_hint = extract_departure_hint_from_user_text(user_input)
-    destination_hint = extract_destination_hint_from_user_text(user_input)
+    fixed_departure = str(collected.get("fixed_departure") or state.get("fixed_departure") or "").strip()
+    fixed_destination = str(collected.get("fixed_destination") or state.get("fixed_destination") or "").strip()
+
+    latest_departure_hint = extract_departure_hint_from_user_text(latest_text) if latest_text else None
+    latest_destination_hint = extract_destination_hint_from_user_text(latest_text) if latest_text else None
+    departure_hint = latest_departure_hint if (latest_departure_hint and user_requests_departure_change(latest_text, fixed_departure)) else None
+    destination_hint = latest_destination_hint if (latest_destination_hint and user_requests_destination_change(latest_text, fixed_destination)) else None
+
+    # 没有显式修改时，保留已锁定的锚点；只有首轮/无锁定时才从完整输入兜底抽取。
+    if not departure_hint and not fixed_departure:
+        departure_hint = extract_departure_hint_from_user_text(user_input)
+    if not destination_hint:
+        if fixed_destination:
+            destination_hint = fixed_destination
+        else:
+            destination_hint = extract_destination_hint_from_user_text(user_input)
+
     if departure_hint:
         fixed["departure"] = departure_hint
         collected["departure"] = departure_hint
+        collected["fixed_departure"] = departure_hint
         collected["_departure_explicit"] = True
-    if destination_hint and (not fixed.get("location") or not is_concrete_location_anchor(str(
-            fixed.get("location"))) or is_departure_only_mention(user_input,
+    if destination_hint and (destination_hint == fixed_destination or not fixed.get("location") or not is_concrete_location_anchor(str(
+            fixed.get("location"))) or is_departure_only_mention(latest_text or user_input,
                                                                  str(fixed.get("location")))):
         fixed["location"] = destination_hint
         collected["location"] = destination_hint
+        collected["fixed_destination"] = destination_hint
+        collected["active_destination_anchor"] = destination_hint
         collected["_location_explicit"] = True
     if fixed.get("location") and is_departure_only_mention(user_input, str(fixed.get("location"))):
         fixed["location"] = ""
@@ -3871,6 +4059,16 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
 
     departure_hint = extract_departure_hint_from_user_text(current_input)
     destination_hint = extract_destination_hint_from_user_text(current_input)
+    latest_text_for_hints = str(state.get("latest_user_input") or "")
+    if latest_text_for_hints:
+        latest_departure_hint = extract_departure_hint_from_user_text(latest_text_for_hints)
+        latest_destination_hint = extract_destination_hint_from_user_text(latest_text_for_hints)
+        fixed_departure_for_hint = str(state.get("fixed_departure") or collected.get("fixed_departure") or "")
+        fixed_destination_for_hint = str(state.get("fixed_destination") or collected.get("fixed_destination") or "")
+        if latest_departure_hint and user_requests_departure_change(latest_text_for_hints, fixed_departure_for_hint):
+            departure_hint = latest_departure_hint
+        if latest_destination_hint and user_requests_destination_change(latest_text_for_hints, fixed_destination_for_hint):
+            destination_hint = latest_destination_hint
     start_time_hint = extract_start_time_hint_from_user_text(current_input)
     transport_mode_hint = extract_transport_mode_from_user_text(current_input)
     if departure_hint:
@@ -4723,6 +4921,7 @@ def build_structured_plan(state: AgentState) -> AgentState:
     coupon_info = state.get("coupon_info") or {}
     locked_places = state.get("locked_places") or []
     anchor_name, anchor_mode = planning_anchor_for_intent(intent, collected)
+    locked_places = filter_replaced_destinations_from_places(locked_places, state, anchor_name)
     planning_context = {**collected, **intent, "route_variant_seed": state.get("route_variant_seed")}
     min_route_stops, max_route_stops = route_stop_bounds(state, intent, collected)
     departure_explicit = bool(collected.get("_departure_explicit"))
@@ -4830,7 +5029,7 @@ def build_structured_plan(state: AgentState) -> AgentState:
         raw_places = unique_preserve_order(
             list(locked_places) + [intent.get("location", "")] + extract_meal_candidates(route_plan))
         structure_anchor_note = f"未检测到明确目的地，已按出发地“{anchor_name or '默认出发地'}”附近优先规划。"
-    raw_places = [p for p in raw_places if p]
+    raw_places = filter_replaced_destinations_from_places([p for p in raw_places if p], state, anchor_name)
 
     # Reservation/availability exceptions are visible to the frontend and should only
     # affect the problematic stop, not user-fixed start/end anchors.
@@ -4877,6 +5076,7 @@ def build_structured_plan(state: AgentState) -> AgentState:
         complement_anchor = anchor_name or intent.get("location", "")
         raw_places.extend(find_nearby_complement_places(complement_anchor, raw_places, planning_context, limit=max(1, min_route_stops - len(raw_places))))
     places, structure_notes = sanitize_structured_places(raw_places, intent)
+    places = filter_replaced_destinations_from_places(places, state, anchor_name)
     structure_notes.insert(0, structure_anchor_note)
     if len(places) < 2 and sync_amap_complement_enabled():
         refill_anchor = places[-1] if places else (anchor_name or intent.get("location", ""))
@@ -4887,6 +5087,7 @@ def build_structured_plan(state: AgentState) -> AgentState:
             structure_notes.append(
                 f"清理连续正餐/重复地点后路线不足，已围绕“{refill_anchor}”补充近距离候选：{'、'.join(refill_places)}。")
     places, adjustment_notes = apply_quick_adjustment_to_places(places, state, intent)
+    places = filter_replaced_destinations_from_places(places, state, anchor_name)
     structure_notes.extend(adjustment_notes)
 
     places, min_route_notes = ensure_minimum_route_places(
@@ -4898,10 +5099,18 @@ def build_structured_plan(state: AgentState) -> AgentState:
         min_route_stops,
         max_route_stops,
     )
+    places = filter_replaced_destinations_from_places(places, state, anchor_name)
     structure_notes.extend(min_route_notes)
 
     places, soft_order_notes = soft_optimize_route_order(places, state, intent)
     structure_notes.extend(soft_order_notes)
+
+    # 最终保险：无论前面 RAG、历史 user_input、快捷调整怎样改动，
+    # 旧目的地都不能留在方案里；最新目的地必须作为当前锚点出现。
+    anchor_name, anchor_mode = planning_anchor_for_intent(intent, collected)
+    places = filter_replaced_destinations_from_places(places, state, anchor_name)
+    if anchor_mode == "destination" and anchor_name:
+        places = move_destination_anchor_to_end(places, anchor_name) if bool(collected.get("_departure_explicit")) else move_destination_anchor_to_start(places, anchor_name)
 
     if not places and not sync_amap_complement_enabled():
         static_fallback = anchor_name or intent.get("location") or collected.get("departure")
