@@ -525,7 +525,13 @@ def safe_int(value, default: int = 1) -> int:
         match = re.search(r"\d+", text)
         if match:
             return int(match.group())
-        match = re.search(r"([一二两俩三四五六七八九十])\s*(?:个)?人?", text)
+        normalized = re.sub(r"\s+", "", text)
+        if any(word in normalized for word in ["父母", "爸妈", "爸爸妈妈", "爹妈"]) and re.search(r"(?:我|我们)?(?:和|跟|带|陪)", normalized):
+            return 3
+        match = re.search(r"一家\s*([一二两俩三四五六七八九十])\s*口", normalized)
+        if match:
+            return chinese_numbers.get(match.group(1), default)
+        match = re.search(r"([一二两俩三四五六七八九十])\s*(?:个)?人?", normalized)
         if match:
             return chinese_numbers.get(match.group(1), default)
         return default
