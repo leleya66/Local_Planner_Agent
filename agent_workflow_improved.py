@@ -869,12 +869,38 @@ def is_category_like_location(location: str) -> bool:
     return bool(text) and any(term in text for term in soft_preference_terms) and not is_shanghai_area_location(location)
 
 
+def looks_like_anchor_edit_instruction(value: str) -> bool:
+    """Return True when a value is an instruction sentence rather than a place name.
+
+    典型坏例：LLM 把“出发地换为松江大学城”整句抽进 location，
+    后续又因为“大学城”是强地点后缀而误存为 fixed_destination。
+    """
+    text = str(value or "").strip()
+    if not text:
+        return False
+    compact = re.sub(r"\s+", "", text)
+    return bool(re.search(
+        r"^(?:把|将)?(?:出发地|起点|始发地|目的地|终点|想去的地方|要去的地方)(?:换成|换为|改成|改为|换到|改到|设为|设置为|为|是|在|到)",
+        compact,
+    ))
+
+
 def is_concrete_location_anchor(location: str) -> bool:
     """Return True when a location can be treated as a route anchor instead of only a preference."""
     text = str(location or "").strip()
     if not text:
         return False
-    return text not in GENERIC_LOCATION_TERMS and not is_category_like_location(text)
+    # 任何仍带“出发地/目的地/起点/终点 + 换为/改成”等指令壳的值，都不是地点锚点。
+    # 这里不做特例判断，临港大学城/松江大学城等所有强后缀地点都走同一套清洗逻辑。
+    if looks_like_anchor_edit_instruction(text):
+        return False
+    try:
+        if text_has_departure_edit_prefix(text) or text_has_destination_edit_prefix(text):
+            return False
+        cleaned = clean_location_hint_candidate(text)
+    except NameError:
+        cleaned = text
+    return cleaned not in GENERIC_LOCATION_TERMS and not is_category_like_location(cleaned)
 
 
 def default_amap_search_spec(intent: dict, user_input: str = "") -> dict:
@@ -1911,26 +1937,69 @@ def place_price_detail(place_name: str) -> dict:
     return {"price_min": low, "price_max": high, "price_text": text}
 
 
-def replaced_destination_key_set(state: AgentState) -> set:
-    """Keys of old destination anchors that must not be carried into a new plan.
+def estimate_schedule_budget(schedule: list[dict], num_people, requested_budget: str = "") -> dict:
+    """Estimate concrete budget from final schedule prices, per version.
 
-    多轮修改目的地时，旧目的地可能已经进入 locked_places、route_plan 草稿
-    或历史 user_input。这里统一记录要排除的旧目的地，避免“陆家嘴→迪士尼→
-    上海动物园”时旧目的地继续混入方案。
+    This is deliberately computed after route replacement/sanitization so the UI
+    budget follows the actual generated route rather than a stale user constraint.
+    """
+    people = parse_people_count(num_people, None) or 1
+    per_min = 0.0
+    per_max = 0.0
+    unknown_count = 0
+    for item in schedule or []:
+        if not isinstance(item, dict):
+            continue
+        text = str(item.get("price_text") or "")
+        low = float(item.get("price_min") or 0)
+        high = float(item.get("price_max") or low or 0)
+        if "待核验" in text and low <= 0 and high <= 0:
+            unknown_count += 1
+            continue
+        per_min += max(0.0, low)
+        per_max += max(0.0, high if high >= low else low)
+    if per_min <= 0 and per_max <= 0 and unknown_count:
+        text = "预算待核验"
+    elif int(round(per_min)) == int(round(per_max)):
+        text = f"预计人均约{int(round(per_max))}元，总计约{int(round(per_max * people))}元（{people}人）"
+    else:
+        text = (
+            f"预计人均约{int(round(per_min))}-{int(round(per_max))}元，"
+            f"总计约{int(round(per_min * people))}-{int(round(per_max * people))}元（{people}人）"
+        )
+    if unknown_count and text != "预算待核验":
+        text += f"；另有{unknown_count}个地点价格待核验"
+    return {
+        "per_person_min": int(round(per_min)),
+        "per_person_max": int(round(per_max)),
+        "total_min": int(round(per_min * people)),
+        "total_max": int(round(per_max * people)),
+        "unknown_count": unknown_count,
+        "num_people": people,
+        "text": text,
+        "requested_budget": requested_budget or "",
+    }
+
+
+def replaced_destination_key_set(state: AgentState) -> set:
+    """Keys of stale anchors to exclude for the current planning run only.
+
+    We no longer persist replaced_destination_keys/replaced_destinations in session.
+    When a user changes start/destination, app_api may pass exclude_anchor_*_once
+    transiently so old anchors can be filtered during this single workflow call.
     """
     collected = (state or {}).get("collected_info") or {}
     raw_keys = []
-    raw_keys.extend((state or {}).get("replaced_destination_keys") or [])
-    raw_keys.extend(collected.get("replaced_destination_keys") or [])
+    raw_keys.extend((state or {}).get("exclude_anchor_keys_once") or [])
+    raw_keys.extend(collected.get("exclude_anchor_keys_once") or [])
     raw_names = []
-    raw_names.extend((state or {}).get("replaced_destinations") or [])
-    raw_names.extend(collected.get("replaced_destinations") or [])
+    raw_names.extend((state or {}).get("exclude_anchor_names_once") or [])
+    raw_names.extend(collected.get("exclude_anchor_names_once") or [])
     for name in raw_names:
         key = normalize_place_text(name)
         if key:
             raw_keys.append(key)
     return {str(k).strip() for k in raw_keys if str(k).strip()}
-
 
 def is_replaced_destination_place(place: str, state: AgentState, current_anchor: str = "") -> bool:
     """Return True when a place is an old destination anchor that must be removed.
@@ -1949,8 +2018,8 @@ def is_replaced_destination_place(place: str, state: AgentState, current_anchor:
         return True
     collected = (state or {}).get("collected_info") or {}
     replaced_names = []
-    replaced_names.extend((state or {}).get("replaced_destinations") or [])
-    replaced_names.extend(collected.get("replaced_destinations") or [])
+    replaced_names.extend((state or {}).get("exclude_anchor_names_once") or [])
+    replaced_names.extend(collected.get("exclude_anchor_names_once") or [])
     for old in replaced_names:
         old = str(old or "").strip()
         if old and not (current_anchor and same_route_place(old, current_anchor)) and same_route_place(place, old):
@@ -2791,7 +2860,7 @@ def find_and_persist_nearby_replacement(
 
 def apply_quick_adjustment_to_places(places: list[str], state: AgentState, intent: dict) -> tuple[list[str], list[str]]:
     modes = state.get("adjustment_modes") or ([state.get("adjustment_mode")] if state.get("adjustment_mode") else [])
-    modes = [mode for mode in unique_preserve_order(modes) if mode]
+    modes = [mode for mode in unique_preserve_order(modes) if mode and mode != "regenerate"]
     locked_keys = locked_route_place_keys(state, intent)
     avoid_places = {
         place for place in (state.get("avoid_places") or [])
@@ -3306,7 +3375,7 @@ def repair_mojibake_text(value) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    if any(marker in text for marker in ["Ã", "Â", "ä", "å", "æ", "�"]):
+    if any(marker in text for marker in ["Ã", "Â", "ä", "å", "æ", " "]):
         try:
             repaired = text.encode("latin1", errors="ignore").decode("utf-8", errors="ignore").strip()
             # 只有修复后确实更像中文/正常文本时才采用，避免误伤英文。
@@ -3314,7 +3383,7 @@ def repair_mojibake_text(value) -> str:
                 text = repaired
         except Exception:
             pass
-    return text.replace("�", "").strip()
+    return text.replace(" ", "").strip()
 
 
 def normalize_budget_text(value, default: str = "") -> str:
@@ -3337,7 +3406,7 @@ def normalize_budget_text(value, default: str = "") -> str:
     text = text.replace("￥", "").replace("¥", "").replace("RMB", "").replace("rmb", "")
     text = re.sub(r"\s+", "", text)
     text = text.replace("每人", "人均").replace("一个人", "人均")
-    text = re.sub(r"(以内|以下|左右|上下){2,}", r"", text)
+    text = re.sub(r"(以内|以下|左右|上下){2,}", lambda m: m.group(1), text)
 
     total_like = any(token in text for token in ["总预算", "总共", "合计", "一共"])
     per_like = any(token in text for token in ["人均", "每人", "单人"])
@@ -3383,7 +3452,10 @@ def _safe_int(value, default: int) -> int:
 
 def normalize_place_text(text: str) -> str:
     value = str(text or "").lower()
-    for ch in " \t\r\n·•-_ /（）()【】[]《》<>，,。；;：:、|":
+    # 归一化时必须去掉中英文引号。否则“松江大学城”和松江大学城
+    # 会被视为不同锚点，导致“把出发地换为‘松江大学城’”这类输入
+    # 无法触发出发地/目的地冲突清理。
+    for ch in " \t\r\n·•-_ /（）()【】[]《》<>，,。；;：:、|‘’'\"“”「」『』":
         value = value.replace(ch, "")
     return value
 
@@ -3495,19 +3567,82 @@ def extract_location_hint_from_user_text(user_input: str) -> Optional[str]:
     return None
 
 
-def clean_location_hint_candidate(candidate: str) -> str:
-    """Clean route verbs accidentally captured with a location, e.g. “松江玩” -> “松江”.
+ANCHOR_QUOTE_CHARS = "‘’'\"“”「」『』《》<>【】[]（）()"
+ANCHOR_EDIT_PREFIX_RE = re.compile(
+    r"^(?:把|将|请|麻烦|帮我|我想|想|要|需要)?"
+    r"(?:出发地|起点|始发地|出发点|目的地|终点|到达地|想去的地方|要去的地方)"
+    r"(?:给我|帮我)?"
+    r"(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成|为|是|在|到)"
+)
+DEPARTURE_EDIT_PREFIX_RE = re.compile(
+    r"^(?:把|将|请|麻烦|帮我|我想|想|要|需要)?"
+    r"(?:出发地|起点|始发地|出发点)"
+    r"(?:给我|帮我)?"
+    r"(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成|为|是|在|到)"
+)
+DESTINATION_EDIT_PREFIX_RE = re.compile(
+    r"^(?:把|将|请|麻烦|帮我|我想|想|要|需要)?"
+    r"(?:目的地|终点|到达地|想去的地方|要去的地方)"
+    r"(?:给我|帮我)?"
+    r"(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成|为|是|在|到)"
+)
 
-    多轮修改里用户常写“更换目的地为松江大学城/换近一点”。这里必须只保留
-    “松江大学城”，不能把“/换近一点”吞进地点名，也不能把“松江大学城”简化成“松江”。
+
+def strip_anchor_quotes(text: str) -> str:
+    """Remove wrapper quotes/brackets around a user supplied place anchor."""
+    value = str(text or "").strip()
+    previous = None
+    while value and value != previous:
+        previous = value
+        value = value.strip().strip(ANCHOR_QUOTE_CHARS).strip()
+    return value
+
+
+def strip_anchor_edit_prefix(text: str) -> str:
+    """Strip role-edit command prefixes before treating text as a place."""
+    value = strip_anchor_quotes(text)
+    value = ANCHOR_EDIT_PREFIX_RE.sub("", value, count=1).strip()
+    value = re.sub(r"^(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成)", "", value).strip()
+    return strip_anchor_quotes(value)
+
+
+def text_has_departure_edit_prefix(text: str) -> bool:
+    return bool(DEPARTURE_EDIT_PREFIX_RE.search(str(text or "").strip()))
+
+
+def text_has_destination_edit_prefix(text: str) -> bool:
+    return bool(DESTINATION_EDIT_PREFIX_RE.search(str(text or "").strip()))
+
+
+def match_is_departure_command(text: str, start_index: int) -> bool:
+    """Whether a generic 换成/改成 match belongs to 出发地/起点, not destination."""
+    prefix = re.sub(r"\s+", "", str(text or "")[:max(0, start_index)])
+    return bool(re.search(r"(?:出发地|起点|始发地|出发点)(?:给我|帮我)?$", prefix[-12:]))
+
+
+def candidate_equals_departure_hint(candidate: str, departure_hint: str) -> bool:
+    if not candidate or not departure_hint:
+        return False
+    cleaned = clean_location_hint_candidate(candidate)
+    return normalize_place_text(cleaned) == normalize_place_text(departure_hint)
+
+
+def clean_location_hint_candidate(candidate: str) -> str:
+    """Clean route/edit verbs accidentally captured with a location.
+
+    通用原则：先移除“出发地/起点/目的地/终点 + 换为/改成/设为”等指令壳，
+    再判断“大学城/动物园/博物馆”等地点后缀。这样临港大学城、松江大学城、
+    奉贤大学城等任意“大学城”都不会把整句“出发地换为X”误存为目的地。
     """
     text = str(candidate or "").strip()
     if not text:
         return ""
-    # 先切掉快捷调整或后半句，避免“松江大学城/换近一点”成为一个假地点。
     text = re.split(r"[/／,，。！？；;\n]", text, maxsplit=1)[0].strip()
     text = re.sub(r"(换近一点|换便宜一点|换室内|换成室内|优先有团购|少走路|重新生成|再来一版)$", "", text).strip()
-    # “松江大学城/浦东新区/上海野生动物园”这类完整地名应优先保留，不要被行政区短词截断。
+
+    # 关键：这个步骤必须发生在 strong_suffixes 判断之前。
+    text = strip_anchor_edit_prefix(text)
+
     strong_suffixes = ("大学城", "动物园", "植物园", "迪士尼", "乐园", "博物馆", "美术馆", "展览馆", "古镇")
     if any(text.endswith(suffix) for suffix in strong_suffixes):
         return text
@@ -3516,7 +3651,7 @@ def clean_location_hint_candidate(candidate: str) -> str:
             return district
     text = re.sub(r"(附近|周边|一带|那边|这边)$", "", text).strip()
     text = re.sub(r"(轻松逛吃|逛吃|吃喝玩乐|吃喝|玩乐|玩|逛|走走|散步|吃饭|吃东西|看看|打卡)$", "", text).strip()
-    return text
+    return strip_anchor_quotes(text)
 
 
 def is_departure_only_mention(text: str, candidate: str) -> bool:
@@ -3531,19 +3666,65 @@ def is_departure_only_mention(text: str, candidate: str) -> bool:
     return bool(departure_hit and not destination_hit)
 
 
-def extract_departure_hint_from_user_text(user_input: str) -> Optional[str]:
-    """规则兜底抽取出发地。
+def has_departure_change_marker(text: str) -> bool:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    return bool(re.search(
+        r"(?:从[^，。！？；;]{1,30}(?:出发|开始|走)|(?:把|将)?(?:出发地|起点|始发地)(?:换成|换为|改成|改为|换到|改到|设为|设置为|是|在|为))",
+        compact,
+    ))
 
-    覆盖：
-    - “想从长乐路出发”
-    - “把出发地换为长乐路 / 出发地改成长乐路”
-    - “起点在长乐路”
+
+def has_destination_change_marker(text: str) -> bool:
+    compact = re.sub(r"\s+", "", str(text or ""))
+    return bool(re.search(
+        r"(?:目的地|终点|想去的地方|要去的地方|想去|要去|去|逛|玩|安排|不去|不要去|换掉)",
+        compact,
+    ))
+
+
+def is_departure_update_only_text(text: str) -> bool:
+    """True when the latest turn only changes the start point, not the destination.
+
+    例如“出发地换为松江大学城”只能更新 departure，不能把 location/fixed_destination
+    改成“出发地换为松江大学城”或“松江大学城”。
     """
+    raw = str(text or "").strip()
+    if not raw:
+        return False
+    return bool(has_departure_change_marker(raw) and not has_destination_change_marker(raw))
+
+
+def is_departure_edit_value(value: str, latest_text: str = "", departure_hint: str = "") -> bool:
+    """Detect location/fixed_destination values that are actually departure-edit instructions."""
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    raw_cleaned = clean_location_hint_candidate(raw)
+    if text_has_departure_edit_prefix(raw):
+        return True
+    if looks_like_anchor_edit_instruction(raw) and any(token in raw for token in ["出发地", "起点", "始发地", "出发点"]):
+        return True
+    if latest_text and normalize_place_text(raw) == normalize_place_text(latest_text) and is_departure_update_only_text(latest_text):
+        return True
+    if departure_hint:
+        if any(token in raw for token in ["出发地", "起点", "始发地", "出发点"]) and normalize_place_text(departure_hint) in normalize_place_text(raw):
+            return True
+        # LLM 有时会把 location 抽成纯地点 X。若本轮明确只是“出发地换为X”，纯 X 也不能成为目的地。
+        if latest_text and is_departure_update_only_text(latest_text) and normalize_place_text(raw_cleaned) == normalize_place_text(departure_hint):
+            return True
+    return False
+
+
+def extract_departure_hint_from_user_text(user_input: str) -> Optional[str]:
+    """规则兜底抽取出发地。"""
     text = str(user_input or "")
+    if not text:
+        return None
+    place_chars = r"[‘’'\"“”「」『』《》<>【】（）()\[\]\u4e00-\u9fffA-Za-z0-9·•\-_ ]"
     patterns = [
-        r"(?:把|将)?(?:出发地|起点)(?:换成|换为|改成|改为|换到|改到|设为|设置为|是|在)([^，。！？；;、/／\s]{2,24}?)(?:出发|开始|走|$|，|。|！|？|；|;)",
-        r"(?:想|要|准备)?从([^，。！？；;、/／\s]{2,24}?)(?:出发|开始|走|$|，|。|！|？|；|;)",
-        r"([^，。！？；;、/／\s]{2,24}?)(?:出发)",
+        rf"(?:把|将|请|麻烦|帮我|我想|想|要|需要)?(?:出发地|起点|始发地|出发点)(?:给我|帮我)?(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成|是|在|为|到)({place_chars}{{2,40}}?)(?:出发|开始|走|$|，|。|！|？|；|;|,)",
+        rf"(?:想|要|准备)?从({place_chars}{{2,40}}?)(?:出发|开始|走|$|，|。|！|？|；|;|,)",
+        rf"({place_chars}{{2,40}}?)(?:出发)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
@@ -3559,25 +3740,35 @@ def extract_departure_hint_from_user_text(user_input: str) -> Optional[str]:
 def extract_destination_hint_from_user_text(user_input: str) -> Optional[str]:
     """规则兜底抽取“到 X / 目的地 X / 想去 X / 目的地换成 X”。
 
-    注意：多轮修改时，latest_user_input 里常见“目的地换成陆家嘴”、
-    “不去田子坊了，改成陆家嘴”。这些必须覆盖旧目的地，不能被历史
-    user_input 里的旧目的地干扰。
+    关键防线：通用“换成/改成/换为”不能吞掉“出发地换为X”。
+    无论 X 是松江大学城、临港大学城、奉贤大学城还是其他强后缀地点，
+    只要换的是出发地/起点，就不允许作为目的地返回。
     """
     text = str(user_input or "")
+    if is_departure_update_only_text(text):
+        return None
     suffixes = "动物园|植物园|公园|古镇|乐园|大学城|景区|博物馆|美术馆|展览馆|广场|商场|街区|寺庙|寺|园区|步道|滨江|外滩|沙滩|海滩|海湾|新区|区"
+    place_chars = r"[‘’'\"“”「」『』《》<>【】（）()\[\]\u4e00-\u9fffA-Za-z0-9·•\-_ ]"
+    end_boundary = r"(?=$|，|。|！|？|；|;|,|、|/|／|\s)"
+    quote_prefix = r"[‘’'\"“”「」『』《》<>【】（）()\[\]]{0,2}"
     patterns = [
-        # 明确修改目的地：更换目的地为X / 目的地换成X / 终点改为X / 不去A了，改成X
-        rf"(?:更换|修改|调整|重新设置)?(?:目的地|终点|想去的地方|要去的地方)(?:换成|改成|改为|换为|换到|改到|为|是|到)([^，。！？；;、/／\s]{{2,24}}(?:{suffixes})?)",
-        rf"(?:目的地|终点|想去的地方|要去的地方)?(?:换成|改成|改为|换为|换到|改到)([^，。！？；;、/／\s]{{2,24}}(?:{suffixes})?)",
-        rf"(?:不去|不要去|换掉)[^，。！？；;]{{0,18}}(?:了|啦)?[，,、\s]*(?:去|换成|改成|改为|换为|换到|改到)([^，。！？；;、/／\s]{{2,24}}(?:{suffixes})?)",
-        rf"(?:到|去到|目的地是|目的地为|目的地在|终点是|终点为|想去|要去|去|逛|玩|安排)([^，。！？；;、/／\s]{{2,24}}(?:{suffixes})?)",
+        (rf"(?:更换|修改|调整|重新设置|把|将)?(?:目的地|终点|到达地|想去的地方|要去的地方)(?:给我|帮我)?(?:换成|改成|改为|换为|换到|改到|为|是|到|设为|设置为){quote_prefix}({place_chars}{{2,40}}?(?:{suffixes})?){end_boundary}", "destination_explicit"),
+        (rf"(?:不去|不要去|换掉)[^，。！？；;]{{0,18}}(?:了|啦)?[，,、\s]*(?:去|换成|改成|改为|换为|换到|改到){quote_prefix}({place_chars}{{2,40}}?(?:{suffixes})?){end_boundary}", "destination_replace"),
+        (rf"(?:到|去到|目的地是|目的地为|目的地在|终点是|终点为|想去|要去|去|逛|玩|安排){quote_prefix}({place_chars}{{2,40}}?(?:{suffixes})?){end_boundary}", "destination_verb"),
+        (rf"(?:换成|改成|改为|换为|换到|改到){quote_prefix}({place_chars}{{2,40}}?(?:{suffixes})?){end_boundary}", "generic_change"),
     ]
-    for pattern in patterns:
-        match = re.search(pattern, text)
-        if match:
+    for pattern, kind in patterns:
+        for match in re.finditer(pattern, text):
+            if kind == "generic_change" and match_is_departure_command(text, match.start()):
+                continue
             candidate = clean_location_hint_candidate(match.group(1))
-            if candidate and candidate not in GENERIC_LOCATION_TERMS and not is_departure_only_mention(text, candidate):
-                return candidate
+            if not candidate or candidate in GENERIC_LOCATION_TERMS:
+                continue
+            if is_departure_only_mention(text, candidate):
+                continue
+            if is_departure_edit_value(match.group(0), text, extract_departure_hint_from_user_text(text) or ""):
+                continue
+            return candidate
     return extract_location_hint_from_user_text(text)
 
 
@@ -3674,7 +3865,24 @@ def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentStat
     latest_destination_hint = extract_destination_hint_from_user_text(latest_text)
     departure_change = bool(latest_departure_hint) and user_requests_departure_change(latest_text, fixed_departure)
     destination_change = bool(latest_destination_hint) and user_requests_destination_change(latest_text, fixed_destination)
+    departure_only_change = is_departure_update_only_text(latest_text)
     notes = []
+
+    if is_departure_edit_value(fixed_destination, latest_text, latest_departure_hint or ""):
+        # 历史状态已经被“出发地换为X”污染成目的地时，先清掉污染值。
+        fixed_destination = ""
+        for key in ["fixed_destination", "active_destination_anchor"]:
+            state.pop(key, None)
+        for key in ["fixed_destination", "active_destination_anchor", "location"]:
+            collected.pop(key, None)
+        collected["_location_explicit"] = False
+        notes.append("已清理被出发地修改语句误写入的目的地字段。")
+
+    if departure_only_change and not destination_change and extracted.get("location"):
+        raw_location = str(extracted.get("location") or "").strip()
+        cleaned_location = clean_location_hint_candidate(raw_location)
+        if is_departure_edit_value(raw_location, latest_text, latest_departure_hint or "") or (latest_departure_hint and normalize_place_text(cleaned_location) == normalize_place_text(latest_departure_hint)):
+            extracted["location"] = None
 
     # 出发地：没有明确修改时，强制保留旧出发地，防止被“上一版目的地”污染。
     if departure_change:
@@ -3703,18 +3911,18 @@ def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentStat
             collected.get("fixed_destination"),
             collected.get("location"),
         ]
-        replaced_names = [
+        stale_anchor_names = unique_preserve_order([
             str(p).strip() for p in previous_candidates
             if p and str(p).strip() and not same_route_place(str(p).strip(), new_destination)
-        ]
-        replaced_keys = {normalize_place_text(p) for p in replaced_names if normalize_place_text(p)}
-        existing_replaced = set(state.get("replaced_destination_keys") or [])
-        state["replaced_destination_keys"] = sorted(existing_replaced | replaced_keys)
-        state["replaced_destinations"] = unique_preserve_order(
-            list(state.get("replaced_destinations") or []) + replaced_names
-        )
-        collected["replaced_destination_keys"] = state["replaced_destination_keys"]
-        collected["replaced_destinations"] = state["replaced_destinations"]
+        ])
+        stale_anchor_keys = [normalize_place_text(p) for p in stale_anchor_names if normalize_place_text(p)]
+        # 旧目的地只作为本轮临时排除条件，不再写入 replaced_destination_* session 字段。
+        for key in ["replaced_destination_keys", "replaced_destinations"]:
+            state.pop(key, None)
+            collected.pop(key, None)
+        if stale_anchor_names:
+            state["exclude_anchor_names_once"] = stale_anchor_names
+            state["exclude_anchor_keys_once"] = stale_anchor_keys
         extracted["location"] = new_destination
         collected["location"] = new_destination
         collected["fixed_destination"] = new_destination
@@ -3727,8 +3935,8 @@ def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentStat
         if isinstance(state.get("intent"), dict):
             state["intent"] = {**state.get("intent", {}), "location": new_destination}
         notes.append(f"已按最新输入更新固定目的地：{new_destination}。")
-        if replaced_names:
-            notes.append(f"已移除旧目的地锚点：{'、'.join(unique_preserve_order(replaced_names))}。")
+        if stale_anchor_names:
+            notes.append(f"本轮仅临时排除旧目的地锚点：{'、'.join(stale_anchor_names)}；不会继续保存在会话状态里。")
     elif fixed_destination:
         extracted["location"] = fixed_destination
         collected["location"] = fixed_destination
@@ -3802,6 +4010,14 @@ def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
     fixed_destination = str(collected.get("fixed_destination") or state.get("fixed_destination") or "").strip()
 
     latest_departure_hint = extract_departure_hint_from_user_text(latest_text) if latest_text else None
+    if is_departure_edit_value(fixed_destination, latest_text, latest_departure_hint or ""):
+        fixed_destination = ""
+        collected.pop("fixed_destination", None)
+        collected.pop("active_destination_anchor", None)
+        if is_departure_edit_value(collected.get("location", ""), latest_text, latest_departure_hint or ""):
+            collected.pop("location", None)
+        state.pop("fixed_destination", None)
+        state.pop("active_destination_anchor", None)
     latest_destination_hint = extract_destination_hint_from_user_text(latest_text) if latest_text else None
     departure_hint = latest_departure_hint if (latest_departure_hint and user_requests_departure_change(latest_text, fixed_departure)) else None
     destination_hint = latest_destination_hint if (latest_destination_hint and user_requests_destination_change(latest_text, fixed_destination)) else None
@@ -3812,6 +4028,10 @@ def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
     if not destination_hint:
         if fixed_destination:
             destination_hint = fixed_destination
+        elif latest_text and is_departure_update_only_text(latest_text):
+            # 本轮只是改出发地，不能从拼接历史 user_input 中把“出发地换为X”
+            # 或历史目的地重新抽成最新目的地。
+            destination_hint = None
         else:
             destination_hint = extract_destination_hint_from_user_text(user_input)
 
@@ -3820,6 +4040,11 @@ def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
         collected["departure"] = departure_hint
         collected["fixed_departure"] = departure_hint
         collected["_departure_explicit"] = True
+    if is_departure_update_only_text(latest_text or user_input) and not destination_hint:
+        raw_location = str(fixed.get("location") or "")
+        cleaned_location = clean_location_hint_candidate(raw_location)
+        if is_departure_edit_value(raw_location, latest_text or user_input, departure_hint or "") or (departure_hint and normalize_place_text(cleaned_location) == normalize_place_text(departure_hint)):
+            fixed["location"] = ""
     if destination_hint and (destination_hint == fixed_destination or not fixed.get("location") or not is_concrete_location_anchor(str(
             fixed.get("location"))) or is_departure_only_mention(latest_text or user_input,
                                                                  str(fixed.get("location")))):
@@ -3828,7 +4053,7 @@ def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
         collected["fixed_destination"] = destination_hint
         collected["active_destination_anchor"] = destination_hint
         collected["_location_explicit"] = True
-    if fixed.get("location") and is_departure_only_mention(user_input, str(fixed.get("location"))):
+    if fixed.get("location") and (is_departure_only_mention(user_input, str(fixed.get("location"))) or is_departure_edit_value(str(fixed.get("location")), latest_text or user_input, departure_hint or "")):
         fixed["location"] = ""
     if fixed.get("location") and not is_concrete_location_anchor(str(fixed.get("location"))):
         fixed["location"] = ""
@@ -4078,30 +4303,38 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
     if extracted.get("budget") is not None:
         extracted["budget"] = normalize_budget_text(extracted.get("budget"))
 
-    departure_hint = extract_departure_hint_from_user_text(current_input)
-    destination_hint = extract_destination_hint_from_user_text(current_input)
-    latest_text_for_hints = str(state.get("latest_user_input") or "")
+    latest_text_for_hints = str(state.get("latest_user_input") or "").strip()
+    hint_source_text = latest_text_for_hints or current_input
+    departure_hint = extract_departure_hint_from_user_text(hint_source_text)
+    destination_hint = extract_destination_hint_from_user_text(hint_source_text)
     if latest_text_for_hints:
-        latest_departure_hint = extract_departure_hint_from_user_text(latest_text_for_hints)
-        latest_destination_hint = extract_destination_hint_from_user_text(latest_text_for_hints)
         fixed_departure_for_hint = str(state.get("fixed_departure") or collected.get("fixed_departure") or "")
         fixed_destination_for_hint = str(state.get("fixed_destination") or collected.get("fixed_destination") or "")
-        if latest_departure_hint and user_requests_departure_change(latest_text_for_hints, fixed_departure_for_hint):
-            departure_hint = latest_departure_hint
-        if latest_destination_hint and user_requests_destination_change(latest_text_for_hints, fixed_destination_for_hint):
-            destination_hint = latest_destination_hint
+        if departure_hint and not user_requests_departure_change(latest_text_for_hints, fixed_departure_for_hint):
+            departure_hint = None
+        if destination_hint and not user_requests_destination_change(latest_text_for_hints, fixed_destination_for_hint):
+            destination_hint = None
+        # 本轮明确只是改出发地时，不允许从拼接历史 current_input 里回捞任何目的地候选。
+        if is_departure_update_only_text(latest_text_for_hints):
+            destination_hint = None
     start_time_hint = extract_start_time_hint_from_user_text(current_input)
     transport_mode_hint = extract_transport_mode_from_user_text(current_input)
     if departure_hint:
         extracted["departure"] = departure_hint
+    departure_only_change = is_departure_update_only_text(latest_text_for_hints or current_input)
     if destination_hint:
         extracted["location"] = destination_hint
+    elif departure_hint and departure_only_change:
+        # 本轮只是改出发地；清空 LLM 误抽的 location，旧目的地由 apply_fixed_anchor_guards 保留。
+        extracted["location"] = None
     elif departure_hint and normalize_place_text(extracted.get("location")) == normalize_place_text(departure_hint):
         extracted["location"] = None
     elif extracted.get("location") is not None:
         cleaned_location = clean_location_hint_candidate(str(extracted.get("location") or ""))
         if cleaned_location != str(extracted.get("location") or ""):
             extracted["location"] = cleaned_location or None
+        if departure_hint and normalize_place_text(extracted.get("location")) == normalize_place_text(departure_hint) and is_departure_update_only_text(current_input):
+            extracted["location"] = None
         if extracted.get("location") and not is_concrete_location_anchor(str(extracted.get("location"))):
             extracted["location"] = None
     if start_time_hint:
@@ -5238,6 +5471,13 @@ def build_structured_plan(state: AgentState) -> AgentState:
     if adjustment_conflicts:
         structure_notes.extend(adjustment_conflicts)
 
+    requested_budget_text = normalize_budget_text(collected.get("budget") or intent.get("budget"), "人均200元以内")
+    budget_estimate = estimate_schedule_budget(
+        schedule,
+        collected.get("num_people") or intent.get("num_people"),
+        requested_budget_text,
+    )
+
     route_logic_validation = {
         "ok": not adjustment_conflicts,
         "notes": structure_notes,
@@ -5260,6 +5500,7 @@ def build_structured_plan(state: AgentState) -> AgentState:
         "places": places,
         "schedule": schedule,
         "route_logic_validation": route_logic_validation,
+        "budget_estimate": budget_estimate,
         "hard_constraints": {
             "departure": effective_departure,
             "num_people": parse_people_count(collected.get("num_people") or intent.get("num_people"), None),
@@ -5268,7 +5509,10 @@ def build_structured_plan(state: AgentState) -> AgentState:
             "start_time": collected.get("start_time") or intent.get("start_time"),
             "weather": weather_info.get("weather") or collected.get("weather") or intent.get("weather"),
             "weather_reference": weather_info.get("summary", ""),
-            "budget": normalize_budget_text(collected.get("budget") or intent.get("budget"), "人均200元以内"),
+            "requested_budget": requested_budget_text,
+            "budget_estimate": budget_estimate,
+            "budget_estimate_text": budget_estimate.get("text", "预算待核验"),
+            "budget": budget_estimate.get("text", requested_budget_text),
             "duration_hours": intent.get("duration_hours"),
             "transport_mode": collected.get("transport_mode") or intent.get("transport_mode") or "公交地铁",
             "planning_anchor": anchor_name,

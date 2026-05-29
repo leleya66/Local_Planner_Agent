@@ -21,7 +21,8 @@
     .bottom-panel{flex-shrink:0;border-top:1px solid rgba(220,215,245,.5);background:rgba(255,255,255,.88);z-index:5}.prefs-strip{padding:9px 26px 6px;display:flex;align-items:center;gap:10px}.pref-dd{position:relative}.pref-trig,.quick-btn{height:28px;padding:0 11px;border-radius:999px;border:1px solid rgba(175,169,236,.45);background:rgba(255,255,255,.85);color:#534AB7;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;white-space:nowrap}.pref-trig:hover,.quick-btn:hover,.quick-btn.selected{background:#EEEDFE;border-color:#AFA9EC}.pref-panel{position:absolute;bottom:calc(100% + 8px);left:0;background:#fff;border:1px solid rgba(220,215,245,.9);border-radius:15px;padding:13px;z-index:50;display:none;box-shadow:0 4px 20px rgba(83,74,183,.09)}.pref-panel.open{display:block}.pp-label{font-size:11px;font-weight:700;color:#B4B2A9;letter-spacing:.05em;margin-bottom:9px}.igrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:370px}.int-chip,.pace-chip,.qa-chip{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,.8);background:#F7F6FC;cursor:pointer;transition:all .13s}.int-chip:hover,.int-chip.on,.pace-chip.on,.qa-chip:hover{border-color:#AFA9EC;background:#EEEDFE}.int-chip i,.pace-chip i,.qa-chip i{font-size:17px;color:#B4B2A9}.int-chip.on i,.pace-chip.on i,.qa-chip:hover i{color:#534AB7}.int-chip span,.pace-chip span,.qa-chip span{font-size:11px;color:#888780;font-weight:600;text-align:center}.int-chip.on span,.pace-chip.on span,.qa-chip:hover span{color:#3C3489}.pace-row{display:flex;gap:5px;width:220px}.pace-chip{flex:1}.qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;width:280px}.psep{width:1px;height:18px;background:rgba(175,169,236,.25);margin:0 2px}.cnt-badge{background:#AFA9EC;color:#fff;border-radius:999px;font-size:10px;padding:0 5px;margin-left:1px}.regen-btn{height:28px;padding:0 13px;border-radius:999px;border:none;background:#7F77DD;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px;white-space:nowrap;margin-left:auto}.regen-btn:hover{background:#534AB7}.input-row{padding:5px 26px 14px;display:flex;gap:9px;align-items:center}.group-label{display:flex;align-items:center;gap:6px;font-size:12px;color:#888780;white-space:nowrap}.member-select{height:42px;border-radius:12px;border:1px solid rgba(220,215,245,.8);background:#fff;padding:0 8px;display:none}.chat-input-wrap{flex:1;display:flex;align-items:center;flex-wrap:wrap;border-radius:13px;border:1px solid rgba(220,215,245,.7);background:rgba(255,255,255,.88);padding:5px 8px;gap:5px;min-height:42px}.chat-input-wrap:focus-within{border-color:#AFA9EC;background:#fff}.active-tag{font-size:11px;font-weight:600;color:#7F77DD;background:#EEEDFE;padding:3px 8px;border-radius:999px;border:1px solid #AFA9EC;white-space:nowrap}.chat-input{flex:1;font-size:14px;padding:5px 6px;border:none;background:transparent;color:#2C2C2A;min-width:180px}.chat-input:focus{outline:none}.send-btn{height:42px;padding:0 18px;border-radius:12px;border:none;background:#7F77DD;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}.send-btn:hover{background:#534AB7}.send-btn:disabled{opacity:.55;cursor:not-allowed}.detail-modal{position:fixed;inset:0;background:rgba(35,31,54,.28);display:none;align-items:center;justify-content:center;z-index:80;padding:18px}.detail-modal.open{display:flex}.detail-box{width:min(460px,100%);border-radius:14px;background:#fff;border:1px solid rgba(220,215,245,.95);box-shadow:0 24px 60px rgba(44,38,82,.18);padding:16px}.detail-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.detail-title{font-size:15px;font-weight:800}.detail-close{width:30px;height:30px;border-radius:9px;border:1px solid rgba(220,215,245,.9);background:#fff;color:#888780}.detail-body{font-size:13px;line-height:1.7;color:#888780;white-space:pre-wrap}.mini-btn{margin-top:8px;border:none;background:#7F77DD;color:#fff;border-radius:9px;padding:7px 10px;font-size:12px;font-weight:800}.mini-btn:hover{background:#534AB7}
     @media(max-width:1000px){.page{grid-template-columns:1fr}.sidebar{display:none}.content{grid-template-columns:1fr}.right-panel{display:none}.top-actions{display:none}.topbar{align-items:flex-start;gap:12px}.pane{padding:16px 14px}.tab-bar{padding:0 14px}.prefs-strip{padding:8px 14px;overflow-x:auto}.input-row{padding:7px 14px 12px;display:grid;grid-template-columns:1fr auto}.chat-input-wrap{grid-column:1}.group-label,.member-select{grid-column:1 / -1}.msg-human-inner{max-width:88%}}
 
-  </style>
+  .section-title .back-chat-btn{margin-left:auto;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.82);color:#534AB7;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:4px}.section-title .back-chat-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
+</style>
 </head>
 <body>
 
@@ -74,7 +75,7 @@
           <div id="timeline"><div class="empty"><div><strong>先告诉我你的出行时间和同行人群。</strong><br>例如：周六下午2点，和爸妈三个人从嘉定出发，想室内轻松一点，人均200以内。<br>生成后这里会显示和聊天页一致的新版路线卡片。</div></div></div>
           <div class="summary-card" id="summary-card"></div>
           <div class="map-section" id="map-section" style="display:none">
-            <div class="section-title"><i class="ti ti-map-2"></i>Route map</div>
+            <div class="section-title"><i class="ti ti-map-2"></i>Route map <button class="back-chat-btn" onclick="switchTab('chat')"><i class="ti ti-message-2"></i>返回聊天</button></div>
             <div class="map-wrap" id="map-wrap"><div class="map-placeholder">路线小地图等待生成</div></div>
           </div>
           <div class="map-section" id="plan-section" style="display:none">
@@ -134,7 +135,7 @@
             <button class="quick-btn" onclick="sendQuick('换条路线',this)"><i class="ti ti-refresh"></i>换路线</button>
           </div></div>
         </div>
-        <button class="regen-btn" onclick="sendPrompt('按当前偏好重新生成一版路线')"><i class="ti ti-refresh"></i> Regenerate ↗</button>
+        <button class="regen-btn" onclick="sendPrompt('重新生成一版不同路线')"><i class="ti ti-refresh"></i> Regenerate ↗</button>
       </div>
       <div class="input-row">
         <label class="group-label"><input type="checkbox" id="group-toggle"> 多人偏好</label>
@@ -275,8 +276,7 @@
         <div class="msg-ai-bubble rich-bubble">${html || ""}</div>
         <div class="msg-actions">
           <button class="msg-action-btn primary" onclick="switchTab('route')"><i class="ti ti-list-check"></i> 查看完整路线</button>
-          <button class="msg-action-btn" onclick="sendPrompt('按当前偏好重新生成一版路线')"><i class="ti ti-refresh"></i> Regenerate</button>
-          <button class="msg-action-btn" onclick="switchTab('route');document.getElementById('map-section').scrollIntoView({behavior:'smooth'})"><i class="ti ti-map-2"></i> 路线地图</button>
+          <button class="msg-action-btn" onclick="openRouteMap()"><i class="ti ti-map-2"></i> 路线地图</button>
         </div>
       </div>`;
     $("chat-log").appendChild(wrap);
@@ -404,17 +404,18 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
     let text = String(value ?? "").trim();
     if(!text || /^(undefined|null|nan)$/i.test(text)) return "";
     try{
-      if(/[ÃÂäåæ ]/.test(text)){
+      if(/[ÃÂäåæ�]/.test(text)){
         const bytes = Array.from(text).map(ch=>ch.charCodeAt(0));
         const repaired = new TextDecoder("utf-8", {fatal:false}).decode(new Uint8Array(bytes));
         if(repaired && /[\u4e00-\u9fff]/.test(repaired)) text = repaired;
       }
     }catch(_){}
-    return text.replace(/ /g, "").trim();
+    return text.replace(/�/g, "").trim();
   }
   function displayBudget(value, fallback="待定"){
     let text = repairMojibakeText(value);
     if(!text) return fallback;
+    if(/预计人均|总计约|预算待核验|价格待核验/.test(text)) return text;
     text = text.replace(/[￥¥]/g, "").replace(/RMB/ig, "").replace(/\s+/g, "");
     const match = text.match(/(\d{1,5})(?:\.0+)?/);
     if(match){
@@ -473,6 +474,12 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
       ${rows}
     </div>`;
   }
+  function openRouteMap(){
+    switchTab("route");
+    const map = $("map-section");
+    if(map) map.scrollIntoView({behavior:"smooth", block:"start"});
+  }
+
   function renderTimeline(data, options={}){
     latestData = data;
     const plan = data.structured_plan || {};
@@ -843,7 +850,7 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
   $("new-plan").addEventListener("click",resetUi);
   $("share-btn").addEventListener("click",copyShareLink);
   $("export-btn").addEventListener("click",exportPlan);
-  $("map-focus-btn").addEventListener("click",()=>{switchTab("route");$("map-section").scrollIntoView({behavior:"smooth"});});
+  $("map-focus-btn").addEventListener("click",openRouteMap);
   if(collaborationActive && currentSessionId)startEventPolling();
 </script>
 </body>
