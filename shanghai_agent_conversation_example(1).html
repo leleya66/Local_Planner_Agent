@@ -1,0 +1,635 @@
+<style>
+*{box-sizing:border-box;margin:0;padding:0;}
+body{background:#F7F6FC;}
+.page{width:1440px;height:900px;display:grid;grid-template-columns:280px 1fr;font-family:var(--font-sans);position:relative;overflow:hidden;background:#F7F6FC;}
+.orb1{position:absolute;top:-180px;right:-180px;width:620px;height:620px;border-radius:50%;background:conic-gradient(from 200deg,#FAC775,#F0997B,#ED93B1,#AFA9EC,#85B7EB,#5DCAA5,#FAC775);opacity:.14;z-index:0;filter:blur(70px);pointer-events:none;}
+.orb2{position:absolute;bottom:-200px;left:30px;width:440px;height:440px;border-radius:50%;background:conic-gradient(from 0deg,#85B7EB,#AFA9EC,#ED93B1);opacity:.10;z-index:0;filter:blur(60px);pointer-events:none;}
+
+/* SIDEBAR */
+.sidebar{position:relative;z-index:2;display:flex;flex-direction:column;background:rgba(255,255,255,0.84);border-right:1px solid rgba(220,215,245,0.7);height:100vh;overflow:hidden;}
+.sidebar-header{padding:20px 18px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(220,215,245,0.5);flex-shrink:0;}
+.logo-blob{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#7F77DD;}
+.logo-blob i{font-size:17px;color:#fff;}
+.brand{font-size:15px;font-weight:500;color:#2C2C2A;}
+.brand-sub{font-size:12px;color:#B4B2A9;margin-top:1px;}
+.new-btn{margin:12px 12px 8px;padding:10px 14px;border-radius:13px;border:1px dashed rgba(127,119,221,0.4);background:transparent;color:#534AB7;font-size:13px;cursor:pointer;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:500;flex-shrink:0;}
+.new-btn:hover{background:rgba(127,119,221,0.06);}
+.history{flex:1;overflow-y:auto;padding:4px 10px 10px;display:flex;flex-direction:column;gap:3px;}
+.h-sep{font-size:10px;color:#B4B2A9;padding:8px 4px 4px;letter-spacing:.05em;font-weight:500;}
+.h-item{padding:10px 12px;border-radius:11px;cursor:pointer;border:1px solid transparent;position:relative;}
+.h-item:hover{background:rgba(127,119,221,0.06);border-color:rgba(175,169,236,0.3);}
+.h-item.active{background:rgba(127,119,221,0.09);border-color:rgba(175,169,236,0.55);}
+.h-dot{width:7px;height:7px;border-radius:50%;position:absolute;left:12px;top:50%;transform:translateY(-50%);}
+.h-title{font-size:13px;font-weight:500;color:#2C2C2A;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.h-preview{font-size:11px;color:#B4B2A9;margin-top:2px;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.h-time{font-size:10px;color:#D3D1C7;margin-top:2px;padding-left:16px;}
+
+/* MAIN */
+.main{position:relative;z-index:2;display:flex;flex-direction:column;height:100vh;overflow:hidden;}
+.topbar{flex-shrink:0;padding:14px 28px 12px;border-bottom:1px solid rgba(220,215,245,0.5);display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,0.72);position:relative;z-index:10;}
+.route-icon{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#EEEDFE;}
+.route-icon i{font-size:19px;color:#7F77DD;}
+.topbar-title{font-size:16px;font-weight:500;color:#2C2C2A;}
+.topbar-meta{font-size:12px;color:#B4B2A9;margin-top:3px;display:flex;align-items:center;gap:14px;}
+.mc{display:inline-flex;align-items:center;gap:4px;}
+.mc i{font-size:12px;}
+.top-actions{display:flex;gap:8px;}
+.t-btn{height:32px;padding:0 14px;border-radius:10px;border:1px solid rgba(220,215,245,0.8);background:rgba(255,255,255,0.7);display:flex;align-items:center;gap:6px;cursor:pointer;color:#534AB7;font-size:13px;font-weight:500;}
+.t-btn:hover{background:#EEEDFE;}
+.t-btn i{font-size:14px;}
+.t-btn-collab{background:#534AB7;color:#fff;border-color:#534AB7;}
+.t-btn-collab:hover{background:#3C3489;}
+
+/* CONTENT: two-panel layout — left = conversation+timeline tabs, right = tips */
+.content{flex:1;display:grid;grid-template-columns:1fr 300px;overflow:hidden;min-height:0;}
+
+/* TAB BAR */
+.tab-bar{display:flex;gap:0;border-bottom:1px solid rgba(220,215,245,0.5);flex-shrink:0;background:rgba(255,255,255,0.6);padding:0 26px;}
+.tab{font-size:13px;font-weight:500;padding:10px 16px;cursor:pointer;color:#B4B2A9;border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px;transition:all .14s;}
+.tab i{font-size:14px;}
+.tab:hover{color:#534AB7;}
+.tab.active{color:#534AB7;border-bottom-color:#7F77DD;}
+
+.left-col{display:flex;flex-direction:column;overflow:hidden;min-height:0;}
+.pane{flex:1;overflow-y:auto;padding:20px 26px 20px;display:none;}
+.pane.active{display:block;}
+
+/* ── CONVERSATION PANE ─────────────────────────────────────────── */
+.conv-wrap{display:flex;flex-direction:column;gap:20px;}
+
+/* Agent thinking indicator */
+.agent-thinking{display:flex;align-items:center;gap:10px;padding:10px 0;}
+.agent-avatar{width:28px;height:28px;border-radius:50%;background:#EEEDFE;border:1.5px solid #AFA9EC;display:flex;align-items:center;justify-content:center;flex-shrink:0;}
+.agent-avatar i{font-size:13px;color:#7F77DD;}
+.thinking-dots{display:flex;gap:4px;align-items:center;}
+.thinking-dots span{width:6px;height:6px;border-radius:50%;background:#AFA9EC;animation:bounce 1.2s infinite ease-in-out;}
+.thinking-dots span:nth-child(2){animation-delay:.2s;}
+.thinking-dots span:nth-child(3){animation-delay:.4s;}
+@keyframes bounce{0%,80%,100%{transform:translateY(0);}40%{transform:translateY(-5px);}}
+
+/* Human message */
+.msg-human{display:flex;flex-direction:column;align-items:flex-end;gap:5px;}
+.msg-human-inner{max-width:72%;background:#534AB7;color:#fff;border-radius:16px 16px 4px 16px;padding:11px 15px;font-size:13px;line-height:1.6;}
+.msg-human-inner .tag-in-msg{background:rgba(255,255,255,0.25);border:1px solid rgba(255,255,255,0.4);border-radius:999px;padding:1px 7px;font-size:11px;font-weight:500;display:inline-flex;align-items:center;gap:3px;margin-right:4px;}
+.msg-meta{font-size:10px;color:#B4B2A9;padding:0 4px;}
+
+/* AI message */
+.msg-ai{display:flex;gap:10px;align-items:flex-start;}
+.msg-ai-avatar{width:28px;height:28px;border-radius:50%;background:#EEEDFE;border:1.5px solid #AFA9EC;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;}
+.msg-ai-avatar i{font-size:13px;color:#7F77DD;}
+.msg-ai-body{flex:1;display:flex;flex-direction:column;gap:8px;}
+.msg-ai-bubble{background:rgba(255,255,255,0.88);border:1px solid rgba(220,215,245,0.7);border-radius:4px 16px 16px 16px;padding:12px 15px;font-size:13px;color:#2C2C2A;line-height:1.65;}
+.msg-ai-bubble p+p{margin-top:6px;}
+.msg-ai-bubble strong{color:#534AB7;}
+
+/* Inline itinerary card inside AI message */
+.inline-route{background:#F7F6FC;border:1px solid rgba(220,215,245,0.8);border-radius:12px;padding:12px 14px;margin-top:6px;}
+.inline-route-title{font-size:13px;font-weight:500;color:#2C2C2A;margin-bottom:10px;display:flex;align-items:center;gap:6px;}
+.inline-route-title i{color:#7F77DD;}
+.inline-stop{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(220,215,245,0.5);}
+.inline-stop:last-child{border-bottom:none;}
+.inline-num{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:500;color:#fff;flex-shrink:0;}
+.inline-stop-name{font-size:13px;font-weight:500;color:#2C2C2A;flex:1;}
+.inline-stop-time{font-size:11px;color:#B4B2A9;}
+.inline-transit{font-size:11px;color:#B4B2A9;padding:3px 0 3px 30px;display:flex;align-items:center;gap:4px;}
+.inline-transit i{font-size:11px;}
+
+/* AI action buttons row */
+.msg-actions{display:flex;gap:6px;flex-wrap:wrap;}
+.msg-action-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;border:1px solid rgba(220,215,245,0.8);background:rgba(255,255,255,0.8);font-size:12px;color:#534AB7;cursor:pointer;font-weight:500;transition:all .13s;}
+.msg-action-btn:hover{background:#EEEDFE;border-color:#AFA9EC;}
+.msg-action-btn i{font-size:13px;}
+.msg-action-btn.primary{background:#534AB7;color:#fff;border-color:#534AB7;}
+.msg-action-btn.primary:hover{background:#3C3489;}
+
+/* ── TIMELINE PANE (same as before) ─────────────────────────────── */
+.day-header{display:flex;align-items:center;gap:12px;margin-bottom:16px;}
+.day-pill{font-size:12px;font-weight:500;padding:5px 14px;border-radius:999px;white-space:nowrap;background:rgba(255,255,255,0.9);border:1px solid rgba(175,169,236,0.4);color:#534AB7;}
+.day-line{flex:1;height:1px;background:rgba(175,169,236,0.18);}
+.ds{font-size:12px;color:#B4B2A9;display:flex;align-items:center;gap:3px;}
+.stop-row{display:grid;grid-template-columns:46px 1fr;}
+.spine{display:flex;flex-direction:column;align-items:center;padding-top:8px;}
+.s-dot{width:13px;height:13px;border-radius:50%;border:2px solid;flex-shrink:0;}
+.s-line{width:2px;flex:1;min-height:12px;margin:3px 0;opacity:.28;}
+.sc-y{border-color:#BA7517;background:#FAEEDA;}.sl-y{background:#BA7517;}
+.sc-o{border-color:#D85A30;background:#FAECE7;}.sl-o{background:#D85A30;}
+.sc-pk{border-color:#D4537E;background:#FBEAF0;}.sl-pk{background:#D4537E;}
+.sc-pu{border-color:#7F77DD;background:#EEEDFE;}.sl-pu{background:#7F77DD;}
+.stop-card{border-radius:14px;padding:13px 15px;border:1px solid rgba(220,215,245,0.7);background:rgba(255,255,255,0.82);margin-bottom:10px;}
+.stop-card:hover{background:#fff;border-color:rgba(175,169,236,0.4);}
+.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px;}
+.card-left{flex:1;min-width:0;}
+.tb{font-size:11px;font-weight:500;padding:2px 8px;border-radius:999px;display:inline-block;margin-bottom:5px;}
+.tb-y{background:#FAEEDA;color:#633806;border:1px solid #FAC775;}
+.tb-o{background:#FAECE7;color:#712B13;border:1px solid #F0997B;}
+.tb-pk{background:#FBEAF0;color:#72243E;border:1px solid #ED93B1;}
+.tb-pu{background:#EEEDFE;color:#3C3489;border:1px solid #AFA9EC;}
+.stop-name{font-size:15px;font-weight:500;color:#2C2C2A;margin-bottom:3px;}
+.stop-desc{font-size:13px;color:#888780;line-height:1.55;}
+.tags{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap;}
+.tag{font-size:11px;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:3px;background:rgba(247,246,252,0.9);border:1px solid rgba(220,215,245,0.8);color:#888780;}
+.tag i{font-size:11px;}
+.ptb{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;padding:6px 8px;border-radius:11px;border:1px solid;min-width:54px;}
+.ptb i{font-size:20px;}
+.ptb span{font-size:10px;font-weight:500;text-align:center;white-space:nowrap;}
+.ptb-attraction{border-color:#AFA9EC;background:#EEEDFE;color:#3C3489;}.ptb-attraction i{color:#534AB7;}
+.ptb-restaurant{border-color:#F0997B;background:#FAECE7;color:#712B13;}.ptb-restaurant i{color:#D85A30;}
+.ptb-museum{border-color:#ED93B1;background:#FBEAF0;color:#72243E;}.ptb-museum i{color:#D4537E;}
+.ptb-park{border-color:#97C459;background:#EAF3DE;color:#27500A;}.ptb-park i{color:#3B6D11;}
+.task-row{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap;}
+.task-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(220,215,245,0.8);background:rgba(255,255,255,0.75);font-size:12px;color:#534AB7;cursor:pointer;font-weight:500;}
+.task-btn:hover{background:#EEEDFE;border-color:#AFA9EC;}
+
+/* RIGHT PANEL */
+.right-panel{border-left:1px solid rgba(220,215,245,0.5);padding:20px 18px;display:flex;flex-direction:column;gap:14px;background:rgba(255,255,255,0.5);overflow-y:auto;}
+.rp-label{font-size:10px;font-weight:500;color:#B4B2A9;letter-spacing:.05em;margin-bottom:8px;}
+.rp-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px;}
+.rp-sum-card{padding:11px 12px;border-radius:12px;background:rgba(255,255,255,0.9);border:1px solid rgba(220,215,245,0.6);}
+.rp-sum-val{font-size:20px;font-weight:500;color:#2C2C2A;}
+.rp-sum-lbl{font-size:11px;color:#B4B2A9;margin-top:2px;}
+.rp-sum-card-wide{grid-column:1/-1;padding:11px 12px;border-radius:12px;background:rgba(255,255,255,0.9);border:1px solid rgba(220,215,245,0.6);display:flex;align-items:center;justify-content:space-between;}
+.tip-card{padding:11px 13px;border-radius:12px;background:rgba(255,255,255,0.85);border:1px solid rgba(220,215,245,0.6);font-size:13px;color:#888780;line-height:1.65;}
+.tip-card strong{color:#534AB7;font-weight:500;}
+
+/* BOTTOM */
+.bottom-panel{flex-shrink:0;border-top:1px solid rgba(220,215,245,0.5);background:rgba(255,255,255,0.88);z-index:5;}
+.prefs-strip{padding:9px 26px 6px;display:flex;align-items:center;gap:10px;}
+.pref-dd{position:relative;}
+.pref-trig{height:28px;padding:0 11px;border-radius:999px;border:1px solid rgba(175,169,236,0.45);background:rgba(255,255,255,0.85);color:#534AB7;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;}
+.pref-trig:hover{background:#fff;}
+.pref-trig i.chev{font-size:10px;color:#AFA9EC;transition:transform .18s;}
+.pref-trig.open i.chev{transform:rotate(180deg);}
+.pref-panel{position:absolute;bottom:calc(100% + 8px);left:0;background:#fff;border:1px solid rgba(220,215,245,0.9);border-radius:15px;padding:13px 13px 11px;z-index:50;display:none;box-shadow:0 4px 20px rgba(83,74,183,0.09);}
+.pref-panel.open{display:block;}
+.pp-label{font-size:11px;font-weight:500;color:#B4B2A9;letter-spacing:.05em;margin-bottom:9px;}
+.igrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:370px;}
+.int-chip{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,0.8);background:#F7F6FC;cursor:pointer;transition:all .13s;}
+.int-chip:hover,.int-chip.on{border-color:#AFA9EC;background:#EEEDFE;}
+.int-chip i{font-size:17px;color:#B4B2A9;}
+.int-chip.on i{color:#534AB7;}
+.int-chip span{font-size:11px;color:#888780;font-weight:500;}
+.int-chip.on span{color:#3C3489;}
+.pace-row{display:flex;gap:5px;width:210px;}
+.pace-chip{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,0.8);background:#F7F6FC;cursor:pointer;transition:all .13s;}
+.pace-chip.on{border-color:#AFA9EC;background:#EEEDFE;}
+.pace-chip i{font-size:15px;color:#B4B2A9;}
+.pace-chip.on i{color:#534AB7;}
+.pace-chip span{font-size:11px;color:#888780;font-weight:500;}
+.pace-chip.on span{color:#3C3489;}
+.qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;width:260px;}
+.qa-chip{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,0.8);background:#F7F6FC;cursor:pointer;transition:all .13s;}
+.qa-chip.on{border-color:#AFA9EC;background:#EEEDFE;}
+.qa-chip i{font-size:17px;color:#B4B2A9;}
+.qa-chip.on i{color:#534AB7;}
+.qa-chip span{font-size:11px;color:#888780;font-weight:500;text-align:center;}
+.qa-chip.on span{color:#3C3489;}
+.psep{width:1px;height:18px;background:rgba(175,169,236,0.25);margin:0 2px;}
+.cnt-badge{background:#AFA9EC;color:#fff;border-radius:999px;font-size:10px;padding:0 5px;margin-left:1px;}
+.regen-btn{height:28px;padding:0 13px;border-radius:999px;border:none;background:#7F77DD;color:#fff;font-size:12px;font-weight:500;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap;margin-left:auto;}
+.regen-btn:hover{background:#534AB7;}
+.input-row{padding:5px 26px 14px;display:flex;gap:9px;align-items:center;}
+.chat-input-wrap{flex:1;display:flex;align-items:center;flex-wrap:wrap;border-radius:13px;border:1px solid rgba(220,215,245,0.7);background:rgba(255,255,255,0.88);padding:5px 8px;gap:5px;min-height:42px;}
+.chat-input-wrap:focus-within{border-color:#AFA9EC;background:#fff;}
+.active-tag{font-size:11px;font-weight:500;color:#7F77DD;background:#EEEDFE;padding:3px 8px;border-radius:999px;border:1px solid #AFA9EC;white-space:nowrap;cursor:pointer;display:inline-flex;align-items:center;gap:3px;}
+.active-tag:hover{background:#D4C8F8;}
+.active-tag i{font-size:10px;opacity:.6;}
+.chat-input{flex:1;font-size:14px;padding:3px 4px;border:none;background:transparent;color:#2C2C2A;min-width:80px;}
+.chat-input:focus{outline:none;}
+.send-btn{height:42px;padding:0 20px;border-radius:12px;border:none;background:#7F77DD;cursor:pointer;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:500;color:#fff;flex-shrink:0;}
+.send-btn:hover{background:#534AB7;}
+.send-btn i{font-size:14px;}
+</style>
+
+<div class="page">
+<div class="orb1"></div><div class="orb2"></div>
+
+<!-- SIDEBAR -->
+<div class="sidebar">
+  <div class="sidebar-header">
+    <div class="logo-blob"><i class="ti ti-route"></i></div>
+    <div><div class="brand">Route Planner</div><div class="brand-sub">Shanghai weekend agent</div></div>
+  </div>
+  <button class="new-btn"><i class="ti ti-plus" style="font-size:13px"></i> New plan</button>
+  <div class="history">
+    <div class="h-sep">Today</div>
+    <div class="h-item active"><div class="h-dot" style="background:#7F77DD"></div><div class="h-title">Food & culture half-day</div><div class="h-preview">Bund, Yu Garden, Museum…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px"></i> 2 min ago</div></div>
+    <div class="h-item"><div class="h-dot" style="background:#D4537E"></div><div class="h-title">Art district morning</div><div class="h-preview">M50, Power Station…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px"></i> 1 hr ago</div></div>
+    <div class="h-sep">Yesterday</div>
+    <div class="h-item"><div class="h-dot" style="background:#378ADD"></div><div class="h-title">Old town afternoon</div><div class="h-preview">Tianzifang, Xintiandi…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px"></i> Yesterday</div></div>
+    <div class="h-item"><div class="h-dot" style="background:#EF9F27"></div><div class="h-title">Rooftop evening</div><div class="h-preview">Flair, Vue, Bar Rouge…</div><div class="h-time"><i class="ti ti-clock" style="font-size:10px;vertical-align:-1px"></i> Yesterday</div></div>
+  </div>
+</div>
+
+<!-- MAIN -->
+<div class="main">
+  <div class="topbar">
+    <div style="display:flex;align-items:center;gap:12px;">
+      <div class="route-icon"><i class="ti ti-map-pin"></i></div>
+      <div>
+        <div class="topbar-title">Food & culture half-day</div>
+        <div class="topbar-meta">
+          <span class="mc"><i class="ti ti-calendar"></i>Saturday</span>
+          <span class="mc"><i class="ti ti-map-pin"></i>4 stops</span>
+          <span class="mc"><i class="ti ti-clock"></i>~5 hrs</span>
+          <span class="mc"><i class="ti ti-walk"></i>3.4 km</span>
+        </div>
+      </div>
+    </div>
+    <div class="top-actions">
+      <button class="t-btn"><i class="ti ti-share"></i> Share</button>
+      <button class="t-btn t-btn-collab"><i class="ti ti-users"></i> Collaborate</button>
+    </div>
+  </div>
+
+  <div class="content">
+    <div class="left-col">
+
+      <!-- TAB BAR -->
+      <div class="tab-bar">
+        <div class="tab active" id="tab-chat" onclick="switchTab('chat')"><i class="ti ti-message-2"></i> Conversation</div>
+        <div class="tab" id="tab-route" onclick="switchTab('route')"><i class="ti ti-list-check"></i> Itinerary</div>
+      </div>
+
+      <!-- CONVERSATION PANE -->
+      <div class="pane active" id="pane-chat">
+        <div class="conv-wrap" id="conv-wrap">
+
+          <!-- AI: opening -->
+          <div class="msg-ai">
+            <div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+            <div class="msg-ai-body">
+              <div class="msg-ai-bubble">
+                <p>Hi! I'm your Shanghai weekend route planner. Tell me what you're in the mood for — food, culture, art, nature — and I'll put together a short half-day itinerary that fits your pace. 🗺️</p>
+              </div>
+              <div class="msg-meta" style="font-size:10px;color:#B4B2A9;">09:01 AM</div>
+            </div>
+          </div>
+
+          <!-- Human: first message -->
+          <div class="msg-human">
+            <div class="msg-human-inner">
+              <span class="tag-in-msg"><i class="ti ti-tools-kitchen-2"></i>#food</span>
+              <span class="tag-in-msg"><i class="ti ti-building-castle"></i>#history</span>
+              <span class="tag-in-msg"><i class="ti ti-palette"></i>#art</span>
+              <span class="tag-in-msg"><i class="ti ti-walk"></i>#balanced</span>
+              Plan me a Saturday morning route. I want food, history and art. Balanced pace, metro preferred.
+            </div>
+            <div class="msg-meta">09:02 AM</div>
+          </div>
+
+          <!-- AI: generating -->
+          <div class="msg-ai">
+            <div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+            <div class="msg-ai-body">
+              <div class="msg-ai-bubble">
+                <p>Got it — food, history, and art on a balanced pace. Here's a 5-hour Saturday morning route for you:</p>
+              </div>
+              <!-- Inline route card -->
+              <div class="inline-route">
+                <div class="inline-route-title"><i class="ti ti-map-2"></i>Food & culture half-day · 09:00–14:00</div>
+                <div class="inline-stop">
+                  <div class="inline-num" style="background:#BA7517">1</div>
+                  <div class="stop-name" style="font-size:13px;flex:1;">The Bund</div>
+                  <div class="inline-stop-time">09:00 · ~60 min</div>
+                </div>
+                <div class="inline-transit"><i class="ti ti-train"></i>Metro line 2 · 8 min</div>
+                <div class="inline-stop">
+                  <div class="inline-num" style="background:#D85A30">2</div>
+                  <div class="stop-name" style="font-size:13px;flex:1;">Yu Garden & Old City</div>
+                  <div class="inline-stop-time">10:00 · ~90 min</div>
+                </div>
+                <div class="inline-transit"><i class="ti ti-walk"></i>Walking · 12 min</div>
+                <div class="inline-stop">
+                  <div class="inline-num" style="background:#D4537E">3</div>
+                  <div class="stop-name" style="font-size:13px;flex:1;">Shanghai Museum</div>
+                  <div class="inline-stop-time">11:30 · ~90 min</div>
+                </div>
+                <div class="inline-transit"><i class="ti ti-train"></i>Metro line 1 · 6 min</div>
+                <div class="inline-stop">
+                  <div class="inline-num" style="background:#7F77DD">4</div>
+                  <div class="stop-name" style="font-size:13px;flex:1;">Xintiandi lunch</div>
+                  <div class="inline-stop-time">13:30 · ~60 min</div>
+                </div>
+              </div>
+              <div class="msg-actions">
+                <button class="msg-action-btn primary" onclick="switchTab('route')"><i class="ti ti-list-check"></i> View full itinerary</button>
+                <button class="msg-action-btn"><i class="ti ti-refresh"></i> Regenerate</button>
+                <button class="msg-action-btn"><i class="ti ti-map-2"></i> Show on map</button>
+              </div>
+              <div class="msg-meta" style="font-size:10px;color:#B4B2A9;">09:02 AM</div>
+            </div>
+          </div>
+
+          <!-- Human: follow-up -->
+          <div class="msg-human">
+            <div class="msg-human-inner">
+              Can you swap the museum for something more interactive? Maybe a gallery with a hands-on element.
+            </div>
+            <div class="msg-meta">09:05 AM</div>
+          </div>
+
+          <!-- AI: response -->
+          <div class="msg-ai">
+            <div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+            <div class="msg-ai-body">
+              <div class="msg-ai-bubble">
+                <p>Great idea. I'd replace Shanghai Museum with <strong>Minsheng Art Museum</strong> — they regularly run participatory installations alongside their main exhibitions, so it's hands-on and visually striking.</p>
+                <p>It's about 10 minutes from Yu Garden by metro (line 8), and entry is ¥60. I've updated the itinerary — switch to the Itinerary tab to see the full detail.</p>
+              </div>
+              <div class="msg-actions">
+                <button class="msg-action-btn primary" onclick="switchTab('route')"><i class="ti ti-list-check"></i> See updated itinerary</button>
+                <button class="msg-action-btn"><i class="ti ti-ticket"></i> Book tickets for Minsheng</button>
+              </div>
+              <div class="msg-meta" style="font-size:10px;color:#B4B2A9;">09:05 AM</div>
+            </div>
+          </div>
+
+          <!-- Human: task request -->
+          <div class="msg-human">
+            <div class="msg-human-inner">
+              <span class="tag-in-msg">#cheaper</span>
+              Also can you find me a lunch coupon for Xintiandi? And reserve a table for 2 at 13:30.
+            </div>
+            <div class="msg-meta">09:07 AM</div>
+          </div>
+
+          <!-- AI: task running -->
+          <div class="msg-ai" id="ai-task-msg">
+            <div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+            <div class="msg-ai-body">
+              <div class="msg-ai-bubble">
+                <p>On it! Running two tasks now:</p>
+                <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                  <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#F7F6FC;border-radius:10px;border:1px solid rgba(220,215,245,0.8);">
+                    <i class="ti ti-badge-percent" style="color:#534AB7;font-size:15px"></i>
+                    <div style="flex:1;font-size:12px;color:#2C2C2A;">Searching Meituan & Dianping for Xintiandi coupons…</div>
+                    <span id="task1-status" style="font-size:11px;color:#BA7517;background:#FAEEDA;padding:2px 8px;border-radius:999px;border:1px solid #FAC775;">Running</span>
+                  </div>
+                  <div style="display:flex;align-items:center;gap:8px;padding:7px 10px;background:#F7F6FC;border-radius:10px;border:1px solid rgba(220,215,245,0.8);">
+                    <i class="ti ti-calendar-check" style="color:#534AB7;font-size:15px"></i>
+                    <div style="flex:1;font-size:12px;color:#2C2C2A;">Reserving table for 2 at Ye Shanghai · Sat 13:30…</div>
+                    <span id="task2-status" style="font-size:11px;color:#BA7517;background:#FAEEDA;padding:2px 8px;border-radius:999px;border:1px solid #FAC775;">Running</span>
+                  </div>
+                </div>
+              </div>
+              <div class="msg-meta" style="font-size:10px;color:#B4B2A9;">09:07 AM</div>
+            </div>
+          </div>
+
+          <!-- AI: task results (appears after delay) -->
+          <div class="msg-ai" id="ai-task-result" style="display:none;">
+            <div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+            <div class="msg-ai-body">
+              <div class="msg-ai-bubble">
+                <p>Both done! Here's what I found:</p>
+                <div style="display:flex;flex-direction:column;gap:6px;margin-top:8px;">
+                  <div style="padding:9px 12px;background:#E1F5EE;border-radius:10px;border:1px solid #5DCAA5;">
+                    <div style="font-size:12px;font-weight:500;color:#0F6E56;margin-bottom:3px;display:flex;align-items:center;gap:5px;"><i class="ti ti-check"></i> Coupon found</div>
+                    <div style="font-size:12px;color:#2C2C2A;">Dianping: ¥30 off orders over ¥120 at Ye Shanghai · Valid this weekend</div>
+                  </div>
+                  <div style="padding:9px 12px;background:#E1F5EE;border-radius:10px;border:1px solid #5DCAA5;">
+                    <div style="font-size:12px;font-weight:500;color:#0F6E56;margin-bottom:3px;display:flex;align-items:center;gap:5px;"><i class="ti ti-check"></i> Table reserved</div>
+                    <div style="font-size:12px;color:#2C2C2A;">Ye Shanghai Xintiandi · 2 guests · Saturday 13:30 · Confirmation #YS-4821</div>
+                  </div>
+                </div>
+              </div>
+              <div class="msg-meta" style="font-size:10px;color:#B4B2A9;">09:08 AM</div>
+            </div>
+          </div>
+
+          <!-- Thinking indicator -->
+          <div class="agent-thinking" id="thinking" style="display:none;">
+            <div class="agent-avatar"><i class="ti ti-robot"></i></div>
+            <div class="thinking-dots"><span></span><span></span><span></span></div>
+          </div>
+
+        </div><!-- /conv-wrap -->
+      </div><!-- /pane-chat -->
+
+      <!-- ITINERARY PANE -->
+      <div class="pane" id="pane-route">
+        <div class="day-header">
+          <span class="day-pill"><i class="ti ti-sun" style="font-size:11px;vertical-align:-1px;margin-right:3px"></i>Saturday morning · 09:00 – 14:00</span>
+          <div class="day-line"></div>
+          <span class="ds"><i class="ti ti-clock"></i>5 hrs</span>
+          <span class="ds" style="margin-left:8px"><i class="ti ti-walk"></i>3.4 km</span>
+        </div>
+        <div class="stop-row">
+          <div class="spine"><div class="s-dot sc-y"></div><div class="s-line sl-y" style="min-height:70px"></div></div>
+          <div class="stop-card">
+            <div class="card-head">
+              <div class="card-left">
+                <span class="tb tb-y">09:00 AM</span>
+                <div class="stop-name">The Bund</div>
+                <div class="stop-desc">Shanghai's iconic waterfront promenade — colonial-era facades facing the Pudong skyline. Best before 10am.</div>
+                <div class="tags"><span class="tag"><i class="ti ti-building"></i>Sightseeing</span><span class="tag"><i class="ti ti-walk"></i>Walking</span></div>
+              </div>
+              <div class="ptb ptb-attraction"><i class="ti ti-building-arch"></i><span>Attraction</span></div>
+            </div>
+            <div class="task-row"><button class="task-btn"><i class="ti ti-camera"></i> Photography spots ↗</button></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:46px 1fr;margin-bottom:0;">
+          <div style="display:flex;justify-content:center;"><div style="width:2px;height:24px;background:repeating-linear-gradient(to bottom,rgba(175,169,236,.35) 0 3px,transparent 3px 7px)"></div></div>
+          <div style="padding:4px 0;"><span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.7);font-size:12px;color:#888780;"><i class="ti ti-train"></i>Metro line 2 · 8 min</span></div>
+        </div>
+        <div class="stop-row">
+          <div class="spine"><div class="s-dot sc-o"></div><div class="s-line sl-o" style="min-height:70px"></div></div>
+          <div class="stop-card">
+            <div class="card-head">
+              <div class="card-left">
+                <span class="tb tb-o">10:00 AM</span>
+                <div class="stop-name">Yu Garden & Old City</div>
+                <div class="stop-desc">Ming dynasty garden and temple snack street for xiaolongbao.</div>
+                <div class="tags"><span class="tag"><i class="ti ti-building-castle"></i>History</span><span class="tag"><i class="ti ti-bowl"></i>Street food</span></div>
+              </div>
+              <div class="ptb ptb-park"><i class="ti ti-trees"></i><span>Garden</span></div>
+            </div>
+            <div class="task-row"><button class="task-btn"><i class="ti ti-ticket"></i> Buy tickets ↗</button></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:46px 1fr;margin-bottom:0;">
+          <div style="display:flex;justify-content:center;"><div style="width:2px;height:24px;background:repeating-linear-gradient(to bottom,rgba(175,169,236,.35) 0 3px,transparent 3px 7px)"></div></div>
+          <div style="padding:4px 0;"><span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.7);font-size:12px;color:#888780;"><i class="ti ti-train"></i>Metro line 8 · 10 min</span></div>
+        </div>
+        <div class="stop-row">
+          <div class="spine"><div class="s-dot sc-pk"></div><div class="s-line sl-pk" style="min-height:70px"></div></div>
+          <div class="stop-card" style="border-color:#AFA9EC;background:#FAFAFE;">
+            <div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;"><span style="font-size:10px;background:#EEEDFE;color:#3C3489;padding:2px 8px;border-radius:999px;border:1px solid #AFA9EC;font-weight:500;">✦ Updated by agent</span></div>
+            <div class="card-head">
+              <div class="card-left">
+                <span class="tb tb-pk">11:30 AM</span>
+                <div class="stop-name">Minsheng Art Museum</div>
+                <div class="stop-desc">Participatory installations alongside curated contemporary exhibitions — hands-on and visually striking.</div>
+                <div class="tags"><span class="tag"><i class="ti ti-palette"></i>Art</span><span class="tag"><i class="ti ti-hand-finger"></i>Interactive</span></div>
+              </div>
+              <div class="ptb ptb-museum"><i class="ti ti-building-monument"></i><span>Museum</span></div>
+            </div>
+            <div class="task-row"><button class="task-btn"><i class="ti ti-ticket"></i> Book tickets ↗</button></div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:46px 1fr;margin-bottom:0;">
+          <div style="display:flex;justify-content:center;"><div style="width:2px;height:24px;background:repeating-linear-gradient(to bottom,rgba(175,169,236,.35) 0 3px,transparent 3px 7px)"></div></div>
+          <div style="padding:4px 0;"><span style="display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.7);font-size:12px;color:#888780;"><i class="ti ti-train"></i>Metro line 1 · 6 min</span></div>
+        </div>
+        <div class="stop-row">
+          <div class="spine"><div class="s-dot sc-pu"></div></div>
+          <div class="stop-card">
+            <div class="card-head">
+              <div class="card-left">
+                <span class="tb tb-pu">13:30 PM</span>
+                <div class="stop-name">Xintiandi lunch</div>
+                <div class="stop-desc">Ye Shanghai — table reserved for 2 at 13:30. ¥30 coupon applied via Dianping.</div>
+                <div class="tags"><span class="tag"><i class="ti ti-tools-kitchen-2"></i>Lunch</span><span style="font-size:11px;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:3px;background:#E1F5EE;border:1px solid #5DCAA5;color:#0F6E56;"><i class="ti ti-check"></i>Reserved ✓</span></div>
+              </div>
+              <div class="ptb ptb-restaurant"><i class="ti ti-tools-kitchen-2"></i><span>Restaurant</span></div>
+            </div>
+          </div>
+        </div>
+      </div><!-- /pane-route -->
+
+    </div><!-- /left-col -->
+
+    <!-- RIGHT PANEL -->
+    <div class="right-panel">
+      <div>
+        <div class="rp-label">Summary</div>
+        <div class="rp-summary-grid">
+          <div class="rp-sum-card"><div class="rp-sum-val">5 hrs</div><div class="rp-sum-lbl">Duration</div></div>
+          <div class="rp-sum-card"><div class="rp-sum-val">4</div><div class="rp-sum-lbl">Stops</div></div>
+          <div class="rp-sum-card-wide"><div><div class="rp-sum-val">¥80–120</div><div class="rp-sum-lbl">Est. expenses</div></div><div style="font-size:11px;color:#B4B2A9;text-align:right;line-height:1.7;">Tickets ¥40<br>Metro ¥10<br>Lunch ¥60–80</div></div>
+        </div>
+      </div>
+      <div>
+        <div class="rp-label">Tips</div>
+        <div style="display:flex;flex-direction:column;gap:8px;">
+          <div class="tip-card"><strong>Crowds:</strong> Arrive at the Bund by 9am. Yu Garden hits capacity by 10:30 on weekends.</div>
+          <div class="tip-card"><strong>Updated stop:</strong> Minsheng Art Museum is 10 min by metro from Yu Garden. Book ahead — weekend slots fill up.</div>
+          <div class="tip-card"><strong>Reservation:</strong> Table confirmed at Ye Shanghai · Confirmation #YS-4821. Coupon saves ¥30.</div>
+          <div class="tip-card"><strong>Weather:</strong> Partly cloudy, 24°C. Showers possible after 15:00.</div>
+        </div>
+      </div>
+    </div>
+  </div><!-- /content -->
+
+  <!-- BOTTOM PANEL -->
+  <div class="bottom-panel">
+    <div class="prefs-strip">
+      <div class="pref-dd" id="dd-i">
+        <button class="pref-trig" id="btn-i" onclick="toggleDD('i')">
+          <i class="ti ti-sparkles" style="font-size:12px"></i> Interests <span class="cnt-badge">3</span>
+          <i class="ti ti-chevron-down chev"></i>
+        </button>
+        <div class="pref-panel" id="panel-i">
+          <div class="pp-label">Select your interests</div>
+          <div class="igrid">
+            <div class="int-chip on"><i class="ti ti-tools-kitchen-2"></i><span>Food</span></div>
+            <div class="int-chip on"><i class="ti ti-building-castle"></i><span>History</span></div>
+            <div class="int-chip"><i class="ti ti-shopping-bag"></i><span>Shopping</span></div>
+            <div class="int-chip on"><i class="ti ti-palette"></i><span>Art</span></div>
+            <div class="int-chip"><i class="ti ti-trees"></i><span>Nature</span></div>
+            <div class="int-chip"><i class="ti ti-moon-stars"></i><span>Nightlife</span></div>
+            <div class="int-chip"><i class="ti ti-binoculars"></i><span>Sightseeing</span></div>
+            <div class="int-chip"><i class="ti ti-run"></i><span>Sports</span></div>
+            <div class="int-chip"><i class="ti ti-kayak"></i><span>Activity</span></div>
+            <div class="int-chip"><i class="ti ti-camera"></i><span>Photography</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="psep"></div>
+      <div class="pref-dd" id="dd-p">
+        <button class="pref-trig" id="btn-p" onclick="toggleDD('p')">
+          <i class="ti ti-gauge" style="font-size:12px"></i> Pace: <span style="margin-left:2px;">Balanced</span>
+          <i class="ti ti-chevron-down chev"></i>
+        </button>
+        <div class="pref-panel" id="panel-p">
+          <div class="pp-label">Select travel pace</div>
+          <div class="pace-row">
+            <div class="pace-chip"><i class="ti ti-coffee"></i><span>Relaxed</span></div>
+            <div class="pace-chip on"><i class="ti ti-walk"></i><span>Balanced</span></div>
+            <div class="pace-chip"><i class="ti ti-bolt"></i><span>Packed</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="psep"></div>
+      <div class="pref-dd" id="dd-q">
+        <button class="pref-trig" id="btn-q" onclick="toggleDD('q')">
+          <i class="ti ti-adjustments-horizontal" style="font-size:12px"></i> Quick adjust
+          <i class="ti ti-chevron-down chev"></i>
+        </button>
+        <div class="pref-panel" id="panel-q">
+          <div class="pp-label">Adjust the itinerary</div>
+          <div class="qa-grid">
+            <div class="qa-chip"><i class="ti ti-arrows-minimize"></i><span>Closer stops</span></div>
+            <div class="qa-chip"><i class="ti ti-pig-money"></i><span>Cheaper</span></div>
+            <div class="qa-chip"><i class="ti ti-building"></i><span>Indoor</span></div>
+            <div class="qa-chip"><i class="ti ti-sun"></i><span>Morning only</span></div>
+            <div class="qa-chip"><i class="ti ti-users"></i><span>Family friendly</span></div>
+            <div class="qa-chip"><i class="ti ti-ticket"></i><span>Skip queues</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="psep"></div>
+      <button class="regen-btn"><i class="ti ti-refresh"></i> Regenerate ↗</button>
+    </div>
+    <div class="input-row">
+      <div class="chat-input-wrap" id="tag-wrap">
+        <span class="active-tag">#food <i class="ti ti-x"></i></span>
+        <span class="active-tag">#history <i class="ti ti-x"></i></span>
+        <span class="active-tag">#art <i class="ti ti-x"></i></span>
+        <span class="active-tag">#balanced <i class="ti ti-x"></i></span>
+        <input class="chat-input" id="chat-input" type="text" placeholder="Ask something…"/>
+      </div>
+      <button class="send-btn" onclick="sendMsg()"><i class="ti ti-send"></i> Go</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+// Tab switching
+function switchTab(id) {
+  ['chat','route'].forEach(function(k){
+    document.getElementById('tab-'+k).classList.toggle('active', k===id);
+    document.getElementById('pane-'+k).classList.toggle('active', k===id);
+  });
+}
+
+// Simulate task completion after 1.5s
+setTimeout(function(){
+  document.getElementById('task1-status').textContent='Done ✓';
+  document.getElementById('task1-status').style.cssText='font-size:11px;color:#0F6E56;background:#E1F5EE;padding:2px 8px;border-radius:999px;border:1px solid #5DCAA5;';
+  document.getElementById('task2-status').textContent='Done ✓';
+  document.getElementById('task2-status').style.cssText='font-size:11px;color:#0F6E56;background:#E1F5EE;padding:2px 8px;border-radius:999px;border:1px solid #5DCAA5;';
+  document.getElementById('thinking').style.display='flex';
+  setTimeout(function(){
+    document.getElementById('thinking').style.display='none';
+    document.getElementById('ai-task-result').style.display='flex';
+    var wrap=document.getElementById('conv-wrap');
+    wrap.scrollTop=wrap.scrollHeight;
+  }, 1200);
+}, 1500);
+
+// Dropdowns
+function toggleDD(id){
+  ['i','p','q'].forEach(function(k){
+    var p=document.getElementById('panel-'+k),b=document.getElementById('btn-'+k);
+    if(k===id){var o=p.classList.contains('open');p.classList.toggle('open',!o);b.classList.toggle('open',!o);}
+    else{p.classList.remove('open');b.classList.remove('open');}
+  });
+}
+
+function sendMsg(){
+  var input=document.getElementById('chat-input');
+  if(input.value.trim()) input.value='';
+}
+
+document.addEventListener('click',function(e){
+  if(!e.target.closest('.pref-dd')){
+    ['i','p','q'].forEach(function(k){
+      if(document.getElementById('panel-'+k)) document.getElementById('panel-'+k).classList.remove('open');
+      if(document.getElementById('btn-'+k)) document.getElementById('btn-'+k).classList.remove('open');
+    });
+  }
+});
+</script>

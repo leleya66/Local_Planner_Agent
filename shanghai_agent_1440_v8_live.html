@@ -3,110 +3,30 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>LocalMate Shanghai Agent V8 Live</title>
+  <title>LocalMate Shanghai Agent · Conversational UI</title>
   <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
   <style>
+
     *{box-sizing:border-box;margin:0;padding:0}
-    :root{
-      --bg:#f7f6fc;--card:#fff;--ink:#2c2c2a;--muted:#888780;--soft:#b4b2a9;
-      --line:#ded9f3;--purple:#7f77dd;--purple2:#534ab7;--blue:#378add;
-      --pink:#d4537e;--orange:#d85a30;--yellow:#ba7517;--green:#1d9e75;
-      --shadow:0 12px 34px rgba(66,58,120,.08);
-    }
-    html,body{height:100%;overflow:hidden}
-    body{min-height:100vh;background:var(--bg);font-family:"Microsoft YaHei",Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink)}
-    button,input,textarea,select{font:inherit}
-    button{cursor:pointer}
-    .app{height:100vh;display:grid;grid-template-columns:280px minmax(0,1fr);background:linear-gradient(135deg,#fbfbff 0%,#f5f4fb 55%,#f7fbf9 100%);overflow:hidden}
-    .sidebar{display:flex;flex-direction:column;background:rgba(255,255,255,.88);border-right:1px solid rgba(220,215,245,.8);min-height:0}
-    .sidebar-header{padding:20px 18px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(220,215,245,.55)}
-    .logo-blob{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:var(--purple);color:#fff}
-    .brand{font-size:15px;font-weight:700;color:var(--ink)}.brand-sub{font-size:12px;color:var(--soft);margin-top:2px}
-    .new-btn{margin:12px;padding:10px 14px;border-radius:13px;border:1px dashed rgba(127,119,221,.45);background:transparent;color:var(--purple2);font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:700}
-    .new-btn:hover{background:rgba(127,119,221,.06)}
-    .history{flex:1;overflow-y:auto;padding:4px 10px 12px;display:flex;flex-direction:column;gap:4px}
-    .h-sep{font-size:11px;color:var(--soft);padding:8px 4px 4px;letter-spacing:.05em;font-weight:700}
-    .h-item{padding:10px 12px;border-radius:11px;border:1px solid transparent;position:relative;background:transparent;text-align:left}
-    button.h-item{width:100%;display:block;color:inherit;font:inherit;cursor:pointer}
-    .h-item.active{background:rgba(127,119,221,.09);border-color:rgba(175,169,236,.55)}
-    .h-dot{width:7px;height:7px;border-radius:50%;position:absolute;left:12px;top:18px}
-    .h-title{font-size:13px;font-weight:700;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .h-preview,.h-time{font-size:12px;color:var(--soft);margin-top:3px;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .h-time{font-size:11px;color:#d3d1c7}
-    .main{display:flex;flex-direction:column;min-width:0;height:100vh;min-height:0;overflow:hidden}
-    .topbar{height:68px;flex:0 0 auto;padding:13px 28px;border-bottom:1px solid rgba(220,215,245,.65);display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.76)}
-    .route-head{display:flex;align-items:center;gap:12px;min-width:0}
-    .route-icon{width:40px;height:40px;border-radius:12px;display:flex;align-items:center;justify-content:center;background:#eeedfe;color:var(--purple)}
-    .topbar-title{font-size:17px;font-weight:800;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:560px}
-    .topbar-meta{font-size:12px;color:var(--soft);margin-top:4px;display:flex;gap:14px;flex-wrap:wrap}
-    .mc{display:inline-flex;align-items:center;gap:4px}
-    .top-actions{display:flex;gap:8px}
-    .t-btn{height:30px;padding:0 12px;border-radius:9px;border:1px solid rgba(220,215,245,.9);background:rgba(255,255,255,.72);display:flex;align-items:center;gap:5px;color:var(--muted);font-size:13px}
-    .t-btn:hover{background:#fff;color:var(--purple2);border-color:rgba(175,169,236,.65)}
-    .content{flex:1 1 auto;display:grid;grid-template-columns:minmax(0,1fr) 330px;min-height:0;overflow:hidden}
-    .timeline-scroll{overflow-y:auto;padding:18px 26px 24px;min-height:0}
-    .conversation-card{border-radius:14px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.9);box-shadow:var(--shadow);padding:14px 16px;margin-bottom:16px;min-height:calc(100% - 4px);display:flex;flex-direction:column}
-    .conversation-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}
-    .conversation-title{font-size:14px;font-weight:800;display:flex;align-items:center;gap:7px}.conversation-title i{color:var(--purple)}
-    .conversation-meta{font-size:12px;color:var(--soft)}
-    .day-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}
-    .day-pill{font-size:12px;font-weight:800;padding:5px 14px;border-radius:999px;background:rgba(255,255,255,.95);border:1px solid rgba(175,169,236,.45);color:var(--purple2);white-space:nowrap}
-    .day-line{flex:1;height:1px;background:rgba(175,169,236,.22)}
-    .ds{font-size:12px;color:var(--soft);display:flex;align-items:center;gap:4px}
-    .empty{min-height:460px;border:1px dashed rgba(175,169,236,.65);background:rgba(255,255,255,.72);border-radius:16px;display:flex;align-items:center;justify-content:center;text-align:center;padding:36px;color:var(--muted);line-height:1.8}
-    .stop-row{display:grid;grid-template-columns:46px 1fr}
-    .spine{display:flex;flex-direction:column;align-items:center;padding-top:8px}.s-dot{width:13px;height:13px;border-radius:50%;border:2px solid;flex-shrink:0}.s-line{width:2px;flex:1;min-height:16px;margin:3px 0;opacity:.32}
-    .sc-0{border-color:var(--yellow);background:#faeeda}.sl-0{background:var(--yellow)}.sc-1{border-color:var(--orange);background:#faece7}.sl-1{background:var(--orange)}
-    .sc-2{border-color:var(--pink);background:#fbeaf0}.sl-2{background:var(--pink)}.sc-3{border-color:var(--purple);background:#eeedfe}.sl-3{background:var(--purple)}
-    .sc-4{border-color:var(--blue);background:#e6f1fb}.sl-4{background:var(--blue)}.sc-5{border-color:var(--green);background:#e1f5ee}.sl-5{background:var(--green)}
-    .stop-card{border-radius:14px;padding:13px 15px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.86);box-shadow:var(--shadow)}
-    .card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
-    .card-left{flex:1;min-width:0}.tb{font-size:11px;font-weight:800;padding:3px 8px;border-radius:999px;display:inline-block;margin-bottom:6px;background:#eeedfe;color:#3c3489;border:1px solid #afa9ec}
-    .stop-name{font-size:16px;font-weight:800;margin-bottom:5px}.stop-desc{font-size:13px;color:var(--muted);line-height:1.65;white-space:pre-wrap}
-    .tags{display:flex;gap:5px;margin-top:9px;flex-wrap:wrap}.tag{font-size:11px;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:3px;background:rgba(247,246,252,.95);border:1px solid rgba(220,215,245,.9);color:var(--muted)}
-    .ptb{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;padding:7px 8px;border-radius:11px;border:1px solid;min-width:58px;background:#eeedfe;color:#3c3489;border-color:#afa9ec}
-    .ptb i{font-size:20px}.ptb span{font-size:10px;font-weight:800;text-align:center;white-space:nowrap}
-    .task-row{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}.task-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(220,215,245,.9);background:rgba(255,255,255,.78);font-size:12px;color:var(--purple2);font-weight:800}
-    .task-btn:hover{background:#eeedfe;border-color:#afa9ec}.task-btn.done{color:#0f6e56;background:#e1f5ee;border-color:#5dcaa5}.task-btn.none{color:#9a8b79;background:#fff8ec;border-color:#ead7b6}.task-btn.coupon{color:#9b3c63;background:#fbeaf0;border-color:#ed93b1}
-    .transit-block{display:grid;grid-template-columns:46px 1fr;align-items:stretch}
-    .t-spine-wrap{display:flex;justify-content:center}.t-spine-line{width:2px;background:repeating-linear-gradient(to bottom,rgba(175,169,236,.42) 0 3px,transparent 3px 7px)}
-    .transit-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.9);background:rgba(255,255,255,.76);margin:6px 0;font-size:12px;color:var(--muted);position:relative}
-    .transport-popup{position:absolute;top:calc(100% + 5px);left:0;background:#fff;border:1px solid rgba(220,215,245,.95);border-radius:13px;padding:9px;z-index:30;display:none;min-width:230px;box-shadow:var(--shadow)}
-    .transport-popup.open{display:block}.tp-label{font-size:11px;font-weight:800;color:var(--soft);letter-spacing:.04em;margin-bottom:7px}
-    .tp-opt{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;border:1px solid transparent;margin-bottom:3px}.tp-opt:hover,.tp-opt.sel{background:#eeedfe;border-color:#afa9ec}
-    .summary-card{border-radius:14px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.86);padding:14px 16px;margin-top:14px;display:flex;box-shadow:var(--shadow)}
-    .sum-item{flex:1;display:flex;flex-direction:column;align-items:center;gap:3px}.sum-item+.sum-item{border-left:1px solid rgba(220,215,245,.65)}.sum-val{font-size:20px;font-weight:800}.sum-lbl{font-size:12px;color:var(--soft)}
-    .map-section{margin-top:18px;padding-top:16px;border-top:1px solid rgba(175,169,236,.18)}.section-title{font-size:14px;font-weight:800;display:flex;align-items:center;gap:7px;margin-bottom:11px}.section-title i{color:var(--purple)}
-    .map-wrap{border-radius:14px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.82);overflow:hidden;min-height:260px;display:flex;align-items:center;justify-content:center}
-    .route-map-img{width:100%;min-height:260px;object-fit:contain;display:block}.map-placeholder{padding:32px;color:var(--muted);font-size:13px;text-align:center}
-    .map-marker-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.map-marker-chip{font-size:12px;padding:5px 9px;border-radius:999px;background:#fff;border:1px solid rgba(220,215,245,.82);color:var(--muted)}
-    .right-panel{border-left:1px solid rgba(220,215,245,.65);padding:18px;display:flex;flex-direction:column;gap:14px;background:rgba(255,255,255,.55);overflow-y:auto}
-    .rp-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}
-    .rp-sum-card{padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.9);border:1px solid rgba(220,215,245,.72)}
-    .rp-sum-card-wide{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;gap:10px;padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.9);border:1px solid rgba(220,215,245,.72)}
-    .rp-sum-val{font-size:20px;font-weight:800;color:var(--ink);line-height:1.2}
-    .rp-sum-lbl{font-size:11px;color:var(--soft);margin-top:3px}
-    .rp-label{font-size:11px;font-weight:800;color:var(--soft);letter-spacing:.05em;margin-bottom:8px}.tip-card{padding:11px 13px;border-radius:12px;background:rgba(255,255,255,.88);border:1px solid rgba(220,215,245,.72);font-size:13px;color:var(--muted);line-height:1.65;white-space:pre-wrap}
-    .tip-card strong{color:var(--purple2)}.chat-log{flex:1;min-height:0;overflow:auto;display:flex;flex-direction:column;gap:8px;padding-right:2px}.msg{padding:9px 10px;border-radius:11px;background:#fff;border:1px solid rgba(220,215,245,.72);font-size:13px;color:var(--muted);line-height:1.55;white-space:pre-wrap}.msg.user{align-self:flex-end;max-width:86%;background:#eeedfe;color:#3c3489}.msg.bot{align-self:flex-start;max-width:96%;background:#fff}.msg.rich{width:min(760px,96%);white-space:normal;padding:12px;background:rgba(255,255,255,.96)}.chat-route-title{font-size:14px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:7px;margin-bottom:10px}.chat-route-title i{color:var(--purple)}.chat-map{margin-top:14px;padding-top:12px;border-top:1px solid rgba(175,169,236,.22)}.chat-map-title{font-size:13px;font-weight:800;color:var(--ink);display:flex;align-items:center;gap:6px;margin-bottom:8px}
-    .coupon-card,.reserve-card{border-radius:12px;padding:11px 12px;background:#fff;border:1px solid rgba(220,215,245,.72);margin-top:8px;line-height:1.55}.coupon-card{background:linear-gradient(135deg,#fff8ec,#fff)}.reserve-card{background:linear-gradient(135deg,#eefaf4,#fff)}
-    .coupon-card strong,.reserve-card strong{display:block;color:var(--ink);font-size:13px;margin-bottom:4px}.mini-btn{margin-top:8px;border:none;background:var(--purple);color:#fff;border-radius:9px;padding:7px 10px;font-size:12px;font-weight:800}.mini-btn:hover{background:var(--purple2)}
-    .bottom-panel{flex:0 0 auto;border-top:1px solid rgba(220,215,245,.65);background:rgba(255,255,255,.92);box-shadow:0 -10px 30px rgba(66,58,120,.06);z-index:10}
-    .prefs-strip{padding:9px 26px 7px;display:flex;align-items:center;gap:10px;flex-wrap:wrap}.pref-dd{position:relative}
-    .pref-trig,.quick-btn{height:29px;padding:0 11px;border-radius:999px;border:1px solid rgba(175,169,236,.55);background:rgba(255,255,255,.9);color:var(--purple2);font-size:12px;font-weight:800;display:flex;align-items:center;gap:5px;white-space:nowrap}
-    .quick-btn.selected,.pref-trig:hover,.quick-btn:hover{background:#eeedfe;border-color:#afa9ec}.pref-panel{position:absolute;bottom:calc(100% + 8px);left:0;background:#fff;border:1px solid rgba(220,215,245,.95);border-radius:15px;padding:13px;z-index:20;display:none;box-shadow:var(--shadow)}.pref-panel.open{display:block}
-    .igrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:370px}.int-chip,.pace-chip{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,.9);background:#f7f6fc;cursor:pointer}.int-chip.on,.pace-chip.on{border-color:#afa9ec;background:#eeedfe;color:#3c3489}
-    .int-chip span,.pace-chip span{font-size:11px;font-weight:800}.pace-row{display:flex;gap:5px;width:210px}.pace-chip{flex:1}
-    .regen-btn{height:29px;padding:0 13px;border-radius:999px;border:none;background:var(--purple);color:#fff;font-size:12px;font-weight:800;display:flex;align-items:center;gap:5px}.psep{width:1px;height:18px;background:rgba(175,169,236,.35);margin:0 2px}
-    .input-row{padding:7px 26px 12px;display:flex;gap:9px;align-items:center}
-    .group-label{display:flex;align-items:center;gap:6px;font-size:12px;color:var(--muted);white-space:nowrap}.member-select{height:36px;border-radius:11px;border:1px solid rgba(220,215,245,.8);background:#fff;padding:0 8px;display:none}
-    .chat-input{flex:1 1 640px;min-width:420px;width:100%;font-size:14px;padding:9px 15px;border-radius:13px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.92);color:var(--ink)}.chat-input:focus{outline:none;border-color:#afa9ec;background:#fff}
-    .send-btn{width:38px;height:38px;border-radius:12px;border:none;background:var(--purple);display:flex;align-items:center;justify-content:center;color:#fff}.send-btn:disabled{opacity:.5;cursor:not-allowed}
-    .detail-modal{position:fixed;inset:0;background:rgba(35,31,54,.28);display:none;align-items:center;justify-content:center;z-index:50;padding:18px}.detail-modal.open{display:flex}.detail-box{width:min(440px,100%);border-radius:14px;background:#fff;border:1px solid rgba(220,215,245,.95);box-shadow:0 24px 60px rgba(44,38,82,.18);padding:16px}.detail-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.detail-title{font-size:15px;font-weight:800}.detail-close{width:30px;height:30px;border-radius:9px;border:1px solid rgba(220,215,245,.9);background:#fff;color:var(--muted)}.detail-body{font-size:13px;line-height:1.7;color:var(--muted);white-space:pre-wrap}.detail-body strong{color:var(--ink)}
-    @media (max-width:1000px){.app{grid-template-columns:1fr}.sidebar{display:none}.content{grid-template-columns:1fr}.right-panel{display:none}.topbar{height:auto;align-items:flex-start;gap:12px}.top-actions{display:none}.timeline-scroll{padding:14px 14px 18px}.chat-log{max-height:30vh}.prefs-strip{padding:8px 14px}.input-row{padding:7px 14px 12px;display:grid;grid-template-columns:minmax(0,1fr) 38px}.chat-input{min-width:0;grid-column:1}.group-label,.member-select{grid-column:1 / -1}.send-btn{grid-column:2;grid-row:2}}
+    :root{--bg:#F7F6FC;--card:#fff;--ink:#2C2C2A;--muted:#888780;--soft:#B4B2A9;--line:#DED9F3;--purple:#7F77DD;--purple2:#534AB7;--deep:#3C3489;--blue:#378ADD;--pink:#D4537E;--orange:#D85A30;--yellow:#BA7517;--green:#1D9E75;--good:#0F6E56;--shadow:0 14px 38px rgba(83,74,183,.08);font-family:"Microsoft YaHei",Inter,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}
+    .page{height:100vh;display:grid;grid-template-columns:280px minmax(0,1fr);position:relative;overflow:hidden;background:#F7F6FC}
+    .orb1{position:absolute;top:-180px;right:-180px;width:620px;height:620px;border-radius:50%;background:conic-gradient(from 200deg,#FAC775,#F0997B,#ED93B1,#AFA9EC,#85B7EB,#5DCAA5,#FAC775);opacity:.14;z-index:0;filter:blur(70px);pointer-events:none}.orb2{position:absolute;bottom:-200px;left:30px;width:440px;height:440px;border-radius:50%;background:conic-gradient(from 0deg,#85B7EB,#AFA9EC,#ED93B1);opacity:.10;z-index:0;filter:blur(60px);pointer-events:none}
+    .sidebar{position:relative;z-index:2;display:flex;flex-direction:column;background:rgba(255,255,255,.84);border-right:1px solid rgba(220,215,245,.7);height:100vh;overflow:hidden}.sidebar-header{padding:20px 18px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(220,215,245,.5);flex-shrink:0}.logo-blob{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#7F77DD;color:#fff}.brand{font-size:15px;font-weight:600;color:#2C2C2A}.brand-sub{font-size:12px;color:#B4B2A9;margin-top:1px}.new-btn{margin:12px 12px 8px;padding:10px 14px;border-radius:13px;border:1px dashed rgba(127,119,221,.4);background:transparent;color:#534AB7;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600;flex-shrink:0}.new-btn:hover{background:rgba(127,119,221,.06)}.history{flex:1;overflow-y:auto;padding:4px 10px 10px;display:flex;flex-direction:column;gap:3px}.h-sep{font-size:10px;color:#B4B2A9;padding:8px 4px 4px;letter-spacing:.05em;font-weight:600}.h-item{padding:10px 12px;border-radius:11px;cursor:pointer;border:1px solid transparent;position:relative;background:transparent;text-align:left;color:inherit}.h-item:hover,.h-item.active{background:rgba(127,119,221,.08);border-color:rgba(175,169,236,.48)}.h-dot{width:7px;height:7px;border-radius:50%;position:absolute;left:12px;top:18px}.h-title{font-size:13px;font-weight:600;color:#2C2C2A;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.h-preview,.h-time{font-size:11px;color:#B4B2A9;margin-top:2px;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.h-time{font-size:10px;color:#D3D1C7}
+    .main{position:relative;z-index:2;display:flex;flex-direction:column;height:100vh;overflow:hidden}.topbar{flex-shrink:0;padding:14px 28px 12px;border-bottom:1px solid rgba(220,215,245,.5);display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.72);position:relative;z-index:10}.route-head{display:flex;align-items:center;gap:12px;min-width:0}.route-icon{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#EEEDFE;color:#7F77DD}.topbar-title{font-size:16px;font-weight:600;color:#2C2C2A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:580px}.topbar-meta{font-size:12px;color:#B4B2A9;margin-top:3px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}.mc{display:inline-flex;align-items:center;gap:4px}.top-actions{display:flex;gap:8px}.t-btn{height:32px;padding:0 14px;border-radius:10px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.7);display:flex;align-items:center;gap:6px;color:#534AB7;font-size:13px;font-weight:600}.t-btn:hover{background:#EEEDFE}.t-btn-collab{background:#534AB7;color:#fff;border-color:#534AB7}.t-btn-collab:hover{background:#3C3489}
+    .content{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 300px;overflow:hidden;min-height:0}.left-col{display:flex;flex-direction:column;overflow:hidden;min-height:0}.tab-bar{display:flex;gap:0;border-bottom:1px solid rgba(220,215,245,.5);flex-shrink:0;background:rgba(255,255,255,.6);padding:0 26px}.tab{font-size:13px;font-weight:600;padding:10px 16px;cursor:pointer;color:#B4B2A9;border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px;transition:all .14s}.tab:hover,.tab.active{color:#534AB7}.tab.active{border-bottom-color:#7F77DD}.pane{flex:1;overflow-y:auto;padding:20px 26px;display:none}.pane.active{display:block}.conv-wrap{display:flex;flex-direction:column;gap:18px;min-height:100%;padding-bottom:8px}
+    .msg-human{display:flex;flex-direction:column;align-items:flex-end;gap:5px}.msg-human-inner{max-width:72%;background:#534AB7;color:#fff;border-radius:16px 16px 4px 16px;padding:11px 15px;font-size:13px;line-height:1.6;white-space:pre-wrap;box-shadow:0 8px 22px rgba(83,74,183,.10)}.msg-meta{font-size:10px;color:#B4B2A9;padding:0 4px}.msg-ai{display:flex;gap:10px;align-items:flex-start}.msg-ai-avatar{width:28px;height:28px;border-radius:50%;background:#EEEDFE;border:1.5px solid #AFA9EC;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;color:#7F77DD}.msg-ai-body{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}.msg-ai-bubble{background:rgba(255,255,255,.88);border:1px solid rgba(220,215,245,.7);border-radius:4px 16px 16px 16px;padding:12px 15px;font-size:13px;color:#2C2C2A;line-height:1.65;white-space:normal;box-shadow:var(--shadow)}.msg-ai-bubble strong{color:#534AB7}.rich-bubble{padding:12px 14px}.agent-thinking-inline{display:inline-flex;gap:4px;align-items:center;margin-right:8px}.agent-thinking-inline span{width:6px;height:6px;border-radius:50%;background:#AFA9EC;animation:bounce 1.2s infinite ease-in-out}.agent-thinking-inline span:nth-child(2){animation-delay:.2s}.agent-thinking-inline span:nth-child(3){animation-delay:.4s}@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
+    .inline-route{background:#F7F6FC;border:1px solid rgba(220,215,245,.8);border-radius:12px;padding:12px 14px;margin-top:8px}.inline-route-title{font-size:13px;font-weight:600;color:#2C2C2A;margin-bottom:10px;display:flex;align-items:center;gap:6px}.inline-route-title i{color:#7F77DD}.inline-stop{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(220,215,245,.5)}.inline-stop:last-child{border-bottom:none}.inline-num{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}.inline-stop-name{font-size:13px;font-weight:600;color:#2C2C2A;flex:1}.inline-stop-time{font-size:11px;color:#B4B2A9}.inline-transit{font-size:11px;color:#B4B2A9;padding:3px 0 3px 30px;display:flex;align-items:center;gap:4px}.msg-actions{display:flex;gap:6px;flex-wrap:wrap}.msg-action-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.8);font-size:12px;color:#534AB7;font-weight:600;transition:all .13s}.msg-action-btn:hover{background:#EEEDFE;border-color:#AFA9EC}.msg-action-btn.primary{background:#534AB7;color:#fff;border-color:#534AB7}.msg-action-btn.primary:hover{background:#3C3489}.chat-route-title{font-size:14px;font-weight:700;color:#2C2C2A;display:flex;align-items:center;gap:7px;margin-bottom:8px}.chat-route-title i{color:#7F77DD}
+    .day-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}.day-pill{font-size:12px;font-weight:600;padding:5px 14px;border-radius:999px;white-space:nowrap;background:rgba(255,255,255,.9);border:1px solid rgba(175,169,236,.4);color:#534AB7}.day-line{flex:1;height:1px;background:rgba(175,169,236,.18)}.ds{font-size:12px;color:#B4B2A9;display:flex;align-items:center;gap:3px}.empty{min-height:260px;border:1px dashed rgba(175,169,236,.65);background:rgba(255,255,255,.72);border-radius:16px;display:flex;align-items:center;justify-content:center;text-align:center;padding:32px;color:#888780;line-height:1.8}.stop-row{display:grid;grid-template-columns:46px 1fr}.spine{display:flex;flex-direction:column;align-items:center;padding-top:8px}.s-dot{width:13px;height:13px;border-radius:50%;border:2px solid;flex-shrink:0}.s-line{width:2px;flex:1;min-height:12px;margin:3px 0;opacity:.28}.sc-0{border-color:#BA7517;background:#FAEEDA}.sl-0{background:#BA7517}.sc-1{border-color:#D85A30;background:#FAECE7}.sl-1{background:#D85A30}.sc-2{border-color:#D4537E;background:#FBEAF0}.sl-2{background:#D4537E}.sc-3{border-color:#7F77DD;background:#EEEDFE}.sl-3{background:#7F77DD}.sc-4{border-color:#378ADD;background:#E6F1FB}.sl-4{background:#378ADD}.sc-5{border-color:#1D9E75;background:#E1F5EE}.sl-5{background:#1D9E75}.stop-card{border-radius:14px;padding:13px 15px;border:1px solid rgba(220,215,245,.7);background:rgba(255,255,255,.82);margin-bottom:10px;box-shadow:var(--shadow)}.stop-card:hover{background:#fff;border-color:rgba(175,169,236,.4)}.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.card-left{flex:1;min-width:0}.tb{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;display:inline-block;margin-bottom:5px;background:#EEEDFE;color:#3C3489;border:1px solid #AFA9EC}.tb-0{background:#FAEEDA;color:#633806;border-color:#FAC775}.tb-1{background:#FAECE7;color:#712B13;border-color:#F0997B}.tb-2{background:#FBEAF0;color:#72243E;border-color:#ED93B1}.tb-3{background:#EEEDFE;color:#3C3489;border-color:#AFA9EC}.tb-4{background:#E6F1FB;color:#123B62;border-color:#85B7EB}.tb-5{background:#E1F5EE;color:#0F6E56;border-color:#5DCAA5}.stop-name{font-size:15px;font-weight:700;color:#2C2C2A;margin-bottom:3px}.stop-desc{font-size:13px;color:#888780;line-height:1.55;white-space:pre-wrap}.tags{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}.tag{font-size:11px;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:3px;background:rgba(247,246,252,.9);border:1px solid rgba(220,215,245,.8);color:#888780}.ptb{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;padding:6px 8px;border-radius:11px;border:1px solid;min-width:54px;border-color:#AFA9EC;background:#EEEDFE;color:#3C3489}.ptb i{font-size:20px}.ptb span{font-size:10px;font-weight:600;text-align:center;white-space:nowrap}.ptb-meal{border-color:#F0997B;background:#FAECE7;color:#712B13}.ptb-light_food{border-color:#AFA9EC;background:#EEEDFE;color:#3C3489}.ptb-park,.ptb-non_food{border-color:#97C459;background:#EAF3DE;color:#27500A}.task-row{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}.task-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.75);font-size:12px;color:#534AB7;font-weight:600}.task-btn:hover{background:#EEEDFE;border-color:#AFA9EC}.task-btn.done{color:#0F6E56;background:#E1F5EE;border-color:#5DCAA5}.task-btn.none{color:#9a8b79;background:#fff8ec;border-color:#ead7b6}.task-btn.coupon{color:#9b3c63;background:#FBEAF0;border-color:#ED93B1}.transit-block{display:grid;grid-template-columns:46px 1fr}.t-spine-wrap{display:flex;justify-content:center}.t-spine-line{width:2px;background:repeating-linear-gradient(to bottom,rgba(175,169,236,.35) 0 3px,transparent 3px 7px)}.transit-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.7);font-size:12px;color:#888780;position:relative}.transport-popup{position:absolute;top:calc(100% + 6px);left:0;background:#fff;border:1px solid rgba(220,215,245,.95);border-radius:13px;padding:9px;z-index:30;display:none;min-width:230px;box-shadow:var(--shadow)}.transport-popup.open{display:block}.tp-label{font-size:11px;font-weight:700;color:#B4B2A9;letter-spacing:.04em;margin-bottom:7px}.tp-opt{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;border:1px solid transparent;margin-bottom:3px}.tp-opt:hover,.tp-opt.sel{background:#EEEDFE;border-color:#AFA9EC}.map-section{margin-top:18px;padding-top:16px;border-top:1px solid rgba(175,169,236,.18)}.section-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px;margin-bottom:11px}.section-title i{color:#7F77DD}.map-wrap{border-radius:14px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.82);overflow:hidden;min-height:260px;display:flex;align-items:center;justify-content:center}.route-map-img{width:100%;min-height:260px;object-fit:contain;display:block}.map-placeholder{padding:32px;color:#888780;font-size:13px;text-align:center}.map-marker-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;padding:0 8px 8px}.map-marker-chip{font-size:12px;padding:5px 9px;border-radius:999px;background:#fff;border:1px solid rgba(220,215,245,.82);color:#888780}.summary-card{display:none}.tip-card{padding:11px 13px;border-radius:12px;background:rgba(255,255,255,.85);border:1px solid rgba(220,215,245,.6);font-size:13px;color:#888780;line-height:1.65;white-space:pre-wrap}.tip-card strong{color:#534AB7;font-weight:700}.right-panel{border-left:1px solid rgba(220,215,245,.5);padding:20px 18px;display:flex;flex-direction:column;gap:14px;background:rgba(255,255,255,.5);overflow-y:auto}.rp-label{font-size:10px;font-weight:700;color:#B4B2A9;letter-spacing:.05em;margin-bottom:8px}.rp-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.rp-sum-card,.rp-sum-card-wide{padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.9);border:1px solid rgba(220,215,245,.6)}.rp-sum-card-wide{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between}.rp-sum-val{font-size:20px;font-weight:700;color:#2C2C2A}.rp-sum-lbl{font-size:11px;color:#B4B2A9;margin-top:2px}
+    .bottom-panel{flex-shrink:0;border-top:1px solid rgba(220,215,245,.5);background:rgba(255,255,255,.88);z-index:5}.prefs-strip{padding:9px 26px 6px;display:flex;align-items:center;gap:10px}.pref-dd{position:relative}.pref-trig,.quick-btn{height:28px;padding:0 11px;border-radius:999px;border:1px solid rgba(175,169,236,.45);background:rgba(255,255,255,.85);color:#534AB7;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;white-space:nowrap}.pref-trig:hover,.quick-btn:hover,.quick-btn.selected{background:#EEEDFE;border-color:#AFA9EC}.pref-panel{position:absolute;bottom:calc(100% + 8px);left:0;background:#fff;border:1px solid rgba(220,215,245,.9);border-radius:15px;padding:13px;z-index:50;display:none;box-shadow:0 4px 20px rgba(83,74,183,.09)}.pref-panel.open{display:block}.pp-label{font-size:11px;font-weight:700;color:#B4B2A9;letter-spacing:.05em;margin-bottom:9px}.igrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:370px}.int-chip,.pace-chip,.qa-chip{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,.8);background:#F7F6FC;cursor:pointer;transition:all .13s}.int-chip:hover,.int-chip.on,.pace-chip.on,.qa-chip:hover{border-color:#AFA9EC;background:#EEEDFE}.int-chip i,.pace-chip i,.qa-chip i{font-size:17px;color:#B4B2A9}.int-chip.on i,.pace-chip.on i,.qa-chip:hover i{color:#534AB7}.int-chip span,.pace-chip span,.qa-chip span{font-size:11px;color:#888780;font-weight:600;text-align:center}.int-chip.on span,.pace-chip.on span,.qa-chip:hover span{color:#3C3489}.pace-row{display:flex;gap:5px;width:220px}.pace-chip{flex:1}.qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;width:280px}.psep{width:1px;height:18px;background:rgba(175,169,236,.25);margin:0 2px}.cnt-badge{background:#AFA9EC;color:#fff;border-radius:999px;font-size:10px;padding:0 5px;margin-left:1px}.regen-btn{height:28px;padding:0 13px;border-radius:999px;border:none;background:#7F77DD;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px;white-space:nowrap;margin-left:auto}.regen-btn:hover{background:#534AB7}.input-row{padding:5px 26px 14px;display:flex;gap:9px;align-items:center}.group-label{display:flex;align-items:center;gap:6px;font-size:12px;color:#888780;white-space:nowrap}.member-select{height:42px;border-radius:12px;border:1px solid rgba(220,215,245,.8);background:#fff;padding:0 8px;display:none}.chat-input-wrap{flex:1;display:flex;align-items:center;flex-wrap:wrap;border-radius:13px;border:1px solid rgba(220,215,245,.7);background:rgba(255,255,255,.88);padding:5px 8px;gap:5px;min-height:42px}.chat-input-wrap:focus-within{border-color:#AFA9EC;background:#fff}.active-tag{font-size:11px;font-weight:600;color:#7F77DD;background:#EEEDFE;padding:3px 8px;border-radius:999px;border:1px solid #AFA9EC;white-space:nowrap}.chat-input{flex:1;font-size:14px;padding:5px 6px;border:none;background:transparent;color:#2C2C2A;min-width:180px}.chat-input:focus{outline:none}.send-btn{height:42px;padding:0 18px;border-radius:12px;border:none;background:#7F77DD;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}.send-btn:hover{background:#534AB7}.send-btn:disabled{opacity:.55;cursor:not-allowed}.detail-modal{position:fixed;inset:0;background:rgba(35,31,54,.28);display:none;align-items:center;justify-content:center;z-index:80;padding:18px}.detail-modal.open{display:flex}.detail-box{width:min(460px,100%);border-radius:14px;background:#fff;border:1px solid rgba(220,215,245,.95);box-shadow:0 24px 60px rgba(44,38,82,.18);padding:16px}.detail-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px}.detail-title{font-size:15px;font-weight:800}.detail-close{width:30px;height:30px;border-radius:9px;border:1px solid rgba(220,215,245,.9);background:#fff;color:#888780}.detail-body{font-size:13px;line-height:1.7;color:#888780;white-space:pre-wrap}.mini-btn{margin-top:8px;border:none;background:#7F77DD;color:#fff;border-radius:9px;padding:7px 10px;font-size:12px;font-weight:800}.mini-btn:hover{background:#534AB7}
+    @media(max-width:1000px){.page{grid-template-columns:1fr}.sidebar{display:none}.content{grid-template-columns:1fr}.right-panel{display:none}.top-actions{display:none}.topbar{align-items:flex-start;gap:12px}.pane{padding:16px 14px}.tab-bar{padding:0 14px}.prefs-strip{padding:8px 14px;overflow-x:auto}.input-row{padding:7px 14px 12px;display:grid;grid-template-columns:1fr auto}.chat-input-wrap{grid-column:1}.group-label,.member-select{grid-column:1 / -1}.msg-human-inner{max-width:88%}}
+
   </style>
 </head>
 <body>
-<div class="app">
+
+<div class="page">
+  <div class="orb1"></div><div class="orb2"></div>
   <aside class="sidebar">
     <div class="sidebar-header">
       <div class="logo-blob"><i class="ti ti-route"></i></div>
@@ -115,7 +35,6 @@
     <button class="new-btn" id="new-plan"><i class="ti ti-plus"></i> New plan</button>
     <div class="history" id="history-list"></div>
   </aside>
-
   <main class="main">
     <header class="topbar">
       <div class="route-head">
@@ -132,146 +51,101 @@
       </div>
       <div class="top-actions">
         <button class="t-btn" id="share-btn"><i class="ti ti-share"></i> Share</button>
+        <button class="t-btn t-btn-collab" id="map-focus-btn"><i class="ti ti-map"></i> Map view</button>
         <button class="t-btn" id="export-btn"><i class="ti ti-download"></i> Export</button>
-        <button class="t-btn" id="map-focus-btn"><i class="ti ti-map"></i> Map view</button>
       </div>
     </header>
-
     <section class="content">
-      <div class="timeline-scroll">
-        <div class="conversation-card">
-          <div class="conversation-head">
-            <div class="conversation-title"><i class="ti ti-messages"></i>主对话流程</div>
-            <div class="conversation-meta" id="conversation-meta">当前会话</div>
+      <div class="left-col">
+        <div class="tab-bar"><div id="conversation-meta" style="display:none">当前会话</div>
+          <div class="tab active" id="tab-chat" onclick="switchTab('chat')"><i class="ti ti-message-2"></i> Conversation</div>
+          <div class="tab" id="tab-route" onclick="switchTab('route')"><i class="ti ti-list-check"></i> Itinerary</div>
+        </div>
+        <div class="pane active" id="pane-chat">
+          <div class="conv-wrap" id="chat-log"></div>
+        </div>
+        <div class="pane" id="pane-route">
+          <div class="day-header">
+            <span class="day-pill" id="day-pill"><i class="ti ti-sun"></i> 输入需求后生成路线</span>
+            <div class="day-line"></div>
+            <span class="ds"><i class="ti ti-clock"></i><span id="day-duration">4-6 hrs</span></span>
+            <span class="ds"><i class="ti ti-route"></i><span id="day-distance">距离待计算</span></span>
           </div>
-          <div class="chat-log" id="chat-log">
-            <div class="msg bot">你好呀，我是你的上海周末出行规划助手。先告诉我几点出发、和谁去、几个人，我会继续追问一次关键信息。</div>
+          <div id="timeline"><div class="empty"><div><strong>先告诉我你的出行时间和同行人群。</strong><br>例如：周六下午2点，和爸妈三个人从嘉定出发，想室内轻松一点，人均200以内。<br>生成后这里会显示和聊天页一致的新版路线卡片。</div></div></div>
+          <div class="summary-card" id="summary-card"></div>
+          <div class="map-section" id="map-section" style="display:none">
+            <div class="section-title"><i class="ti ti-map-2"></i>Route map</div>
+            <div class="map-wrap" id="map-wrap"><div class="map-placeholder">路线小地图等待生成</div></div>
           </div>
-        </div>
-        <div class="day-header" style="display:none">
-          <span class="day-pill" id="day-pill"><i class="ti ti-sun"></i> 输入需求后生成路线</span>
-          <div class="day-line"></div>
-          <span class="ds"><i class="ti ti-clock"></i><span id="day-duration">4-6 hrs</span></span>
-          <span class="ds"><i class="ti ti-route"></i><span id="day-distance">距离待计算</span></span>
-        </div>
-        <div id="timeline" style="display:none">
-          <div class="empty">
-            <div>
-              <strong>先告诉我你的出行时间和同行人群。</strong><br>
-              例如：周六下午2点，和爸妈三个人从嘉定出发，想室内轻松一点，人均200以内。<br>
-              生成后这里会变成新版 V8 风格的时间轴、转场、任务按钮和路线地图。
-            </div>
+          <div class="map-section" id="plan-section" style="display:none">
+            <div class="section-title"><i class="ti ti-notes"></i>方案文案</div>
+            <div class="tip-card" id="plan-text">最终小红书文案会显示在这里，时间轴则使用 structured_plan 渲染。</div>
           </div>
-        </div>
-        <div class="summary-card" id="summary-card" style="display:none">
-          <div class="sum-item"><div class="sum-val" id="sum-duration">5 hrs</div><div class="sum-lbl">Duration</div></div>
-          <div class="sum-item"><div class="sum-val" id="sum-stops">0</div><div class="sum-lbl">Stops</div></div>
-          <div class="sum-item"><div class="sum-val" id="sum-budget">待定</div><div class="sum-lbl">Budget</div></div>
-        </div>
-        <div class="map-section" id="map-section" style="display:none">
-          <div class="section-title"><i class="ti ti-map-2"></i>Route map</div>
-          <div class="map-wrap" id="map-wrap"><div class="map-placeholder">路线小地图等待生成</div></div>
-        </div>
-        <div class="map-section" id="plan-section" style="display:none">
-          <div class="section-title"><i class="ti ti-notes"></i>方案文案</div>
-          <div class="tip-card" id="plan-text">最终小红书文案会显示在这里，时间轴则使用 structured_plan 渲染。</div>
         </div>
       </div>
-
       <aside class="right-panel">
         <div>
           <div class="rp-label">Summary</div>
           <div class="rp-summary-grid">
-            <div class="rp-sum-card">
-              <div class="rp-sum-val" id="rp-duration">4-6 hrs</div>
-              <div class="rp-sum-lbl">Duration</div>
-            </div>
-            <div class="rp-sum-card">
-              <div class="rp-sum-val" id="rp-stops">0</div>
-              <div class="rp-sum-lbl">Stops</div>
-            </div>
-            <div class="rp-sum-card-wide">
-              <div>
-                <div class="rp-sum-val" id="rp-budget">待定</div>
-                <div class="rp-sum-lbl">Budget</div>
-              </div>
-              <div style="font-size:11px;color:var(--soft);text-align:right;line-height:1.7;">来自本次方案<br>随生成结果更新</div>
-            </div>
+            <div class="rp-sum-card"><div class="rp-sum-val" id="rp-duration">4-6 hrs</div><div class="rp-sum-lbl">Duration</div></div>
+            <div class="rp-sum-card"><div class="rp-sum-val" id="rp-stops">0</div><div class="rp-sum-lbl">Stops</div></div>
+            <div class="rp-sum-card-wide"><div><div class="rp-sum-val" id="rp-budget">待定</div><div class="rp-sum-lbl">Budget</div></div><div style="font-size:11px;color:#B4B2A9;text-align:right;line-height:1.7;">来自本次方案<br>随生成结果更新</div></div>
           </div>
         </div>
-        <div>
-          <div class="rp-label">Weather</div>
-          <div class="tip-card" id="weather-card">🌤️ 天气会在方案生成后自动显示。</div>
-        </div>
-        <div>
-          <div class="rp-label">Tips</div>
-          <div class="tip-card" id="tips-card">✨ 生成方案后，这里会给你一版可以直接照着走的小贴士。</div>
-        </div>
-        <div>
-          <div class="rp-label">Before You Go</div>
-          <div class="tip-card" id="checklist-card">出发前建议核验营业时间、余位和交通状态。</div>
-        </div>
+        <div><div class="rp-label">Weather</div><div class="tip-card" id="weather-card">🌤️ 天气会在方案生成后自动显示。</div></div>
+        <div><div class="rp-label">Tips</div><div class="tip-card" id="tips-card">✨ 生成方案后，这里会给你一版可以直接照着走的小贴士。</div></div>
+        <div><div class="rp-label">Before You Go</div><div class="tip-card" id="checklist-card">出发前建议核验营业时间、余位和交通状态。</div></div>
       </aside>
     </section>
-
     <footer class="bottom-panel">
       <div class="prefs-strip">
         <div class="pref-dd" id="dd-i">
-          <button class="pref-trig" id="btn-i" onclick="toggleDD('i')"><i class="ti ti-sparkles"></i> Interests <span id="i-cnt">3</span><i class="ti ti-chevron-down"></i></button>
+          <button class="pref-trig" id="btn-i" onclick="toggleDD('i')"><i class="ti ti-sparkles"></i> Interests <span class="cnt-badge" id="i-cnt">3</span><i class="ti ti-chevron-down"></i></button>
           <div class="pref-panel" id="panel-i">
-            <div class="rp-label">Select interests</div>
+            <div class="pp-label">Select interests</div>
             <div class="igrid" id="igrid">
               <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-tools-kitchen-2"></i><span>美食</span></div>
               <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-building-castle"></i><span>文化</span></div>
               <div class="int-chip" onclick="togInt(this)"><i class="ti ti-shopping-bag"></i><span>购物</span></div>
               <div class="int-chip on" onclick="togInt(this)"><i class="ti ti-palette"></i><span>艺术</span></div>
               <div class="int-chip" onclick="togInt(this)"><i class="ti ti-trees"></i><span>自然</span></div>
-              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-moon-stars"></i><span>夜游</span></div>
               <div class="int-chip" onclick="togInt(this)"><i class="ti ti-camera"></i><span>拍照</span></div>
               <div class="int-chip" onclick="togInt(this)"><i class="ti ti-ticket"></i><span>展览</span></div>
               <div class="int-chip" onclick="togInt(this)"><i class="ti ti-cup"></i><span>咖啡</span></div>
               <div class="int-chip" onclick="togInt(this)"><i class="ti ti-bike"></i><span>散步</span></div>
+              <div class="int-chip" onclick="togInt(this)"><i class="ti ti-users"></i><span>亲子</span></div>
             </div>
           </div>
         </div>
         <div class="psep"></div>
         <div class="pref-dd" id="dd-p">
           <button class="pref-trig" id="btn-p" onclick="toggleDD('p')"><i class="ti ti-gauge"></i> Pace: <span id="p-lbl">Balanced</span><i class="ti ti-chevron-down"></i></button>
-          <div class="pref-panel" id="panel-p">
-            <div class="rp-label">Travel pace</div>
-            <div class="pace-row">
-              <div class="pace-chip" onclick="setPace(this,'Relaxed')"><i class="ti ti-coffee"></i><span>Relaxed</span></div>
-              <div class="pace-chip on" onclick="setPace(this,'Balanced')"><i class="ti ti-walk"></i><span>Balanced</span></div>
-              <div class="pace-chip" onclick="setPace(this,'Packed')"><i class="ti ti-bolt"></i><span>Packed</span></div>
-            </div>
-          </div>
+          <div class="pref-panel" id="panel-p"><div class="pp-label">Travel pace</div><div class="pace-row"><div class="pace-chip" onclick="setPace(this,'Relaxed')"><i class="ti ti-coffee"></i><span>Relaxed</span></div><div class="pace-chip on" onclick="setPace(this,'Balanced')"><i class="ti ti-walk"></i><span>Balanced</span></div><div class="pace-chip" onclick="setPace(this,'Packed')"><i class="ti ti-bolt"></i><span>Packed</span></div></div></div>
         </div>
         <div class="psep"></div>
-        <button class="quick-btn" onclick="sendQuick('换近一点',this)">换近一点</button>
-        <button class="quick-btn" onclick="sendQuick('换便宜一点',this)">换便宜一点</button>
-        <button class="quick-btn" onclick="sendQuick('换成室内',this)">换室内</button>
-        <button class="quick-btn" onclick="sendQuick('优先有团购',this)">优先有团购</button>
-        <button class="quick-btn" onclick="sendQuick('少走路',this)">少走路</button>
-        <button class="regen-btn" onclick="sendPrompt('按当前偏好重新生成一版路线')"><i class="ti ti-refresh"></i> Regenerate</button>
+        <div class="pref-dd" id="dd-q">
+          <button class="pref-trig" id="btn-q" onclick="toggleDD('q')"><i class="ti ti-adjustments-horizontal"></i> Quick adjust <i class="ti ti-chevron-down"></i></button>
+          <div class="pref-panel" id="panel-q"><div class="pp-label">Adjust itinerary</div><div class="qa-grid">
+            <button class="quick-btn" onclick="sendQuick('换近一点',this)"><i class="ti ti-arrows-minimize"></i>换近一点</button>
+            <button class="quick-btn" onclick="sendQuick('换便宜一点',this)"><i class="ti ti-pig-money"></i>换便宜</button>
+            <button class="quick-btn" onclick="sendQuick('换成室内',this)"><i class="ti ti-building"></i>换室内</button>
+            <button class="quick-btn" onclick="sendQuick('优先有团购',this)"><i class="ti ti-ticket"></i>优先团购</button>
+            <button class="quick-btn" onclick="sendQuick('少走路',this)"><i class="ti ti-walk"></i>少走路</button>
+            <button class="quick-btn" onclick="sendQuick('换条路线',this)"><i class="ti ti-refresh"></i>换路线</button>
+          </div></div>
+        </div>
+        <button class="regen-btn" onclick="sendPrompt('按当前偏好重新生成一版路线')"><i class="ti ti-refresh"></i> Regenerate ↗</button>
       </div>
       <div class="input-row">
         <label class="group-label"><input type="checkbox" id="group-toggle"> 多人偏好</label>
         <select class="member-select" id="member-select" title="多人讨论身份"></select>
-        <input class="chat-input" id="user-input" type="text" placeholder="输入需求或修改意见，例如：周六下午2点，和朋友两个人从松江出发，想吃火锅，优先有团购">
-        <button class="send-btn" id="send-btn" aria-label="Send"><i class="ti ti-send"></i></button>
+        <div class="chat-input-wrap"><span class="active-tag">#Shanghai</span><span class="active-tag">#Weekend</span><input class="chat-input" id="user-input" type="text" placeholder="输入需求或修改意见，例如：周六下午2点，和朋友两个人从松江出发，想吃火锅，优先有团购"></div>
+        <button class="send-btn" id="send-btn"><i class="ti ti-send"></i> Go</button>
       </div>
     </footer>
   </main>
 </div>
-<div class="detail-modal" id="detail-modal" onclick="closeDetailModal(event)">
-  <div class="detail-box">
-    <div class="detail-head">
-      <div class="detail-title" id="detail-title">详情</div>
-      <button class="detail-close" aria-label="关闭" onclick="closeDetailModal(event)"><i class="ti ti-x"></i></button>
-    </div>
-    <div class="detail-body" id="detail-body"></div>
-  </div>
-</div>
+<div class="detail-modal" id="detail-modal" onclick="closeDetailModal(event)"><div class="detail-box"><div class="detail-head"><div class="detail-title" id="detail-title">详情</div><button class="detail-close" onclick="closeDetailModal(event)"><i class="ti ti-x"></i></button></div><div class="detail-body" id="detail-body"></div></div></div>
 
 <script>
   const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8041" : "";
@@ -375,20 +249,39 @@
     inputEl.focus();
   }
   function appendMsgNode(role,text){
-    const el=document.createElement("div");
-    el.className=`msg ${role}`;
-    el.textContent=text||"";
-    $("chat-log").appendChild(el);
+    const wrap=document.createElement("div");
+    const time = new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"});
+    if(role === "user"){
+      wrap.className="msg-human";
+      wrap.innerHTML=`<div class="msg-human-inner">${esc(text||"")}</div><div class="msg-meta">${esc(time)}</div>`;
+    }else{
+      const isThinking = String(text||"").includes("正在规划中");
+      wrap.className=`msg-ai ${isThinking ? "thinking-message" : ""}`.trim();
+      wrap.innerHTML=`<div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+        <div class="msg-ai-body">
+          <div class="msg-ai-bubble">${isThinking ? `<div class="agent-thinking-inline"><span></span><span></span><span></span></div><span>正在规划中...</span>` : esc(text||"").replace(/\n/g,"<br>")}</div>
+          <div class="msg-meta">${esc(time)}</div>
+        </div>`;
+    }
+    $("chat-log").appendChild(wrap);
     $("chat-log").scrollTop=$("chat-log").scrollHeight;
-    return el;
+    return wrap;
   }
   function appendRichBotNode(html, extraClass=""){
-    const el=document.createElement("div");
-    el.className=`msg bot rich ${extraClass}`.trim();
-    el.innerHTML=html || "";
-    $("chat-log").appendChild(el);
+    const wrap=document.createElement("div");
+    wrap.className=`msg-ai ${extraClass}`.trim();
+    wrap.innerHTML=`<div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+      <div class="msg-ai-body">
+        <div class="msg-ai-bubble rich-bubble">${html || ""}</div>
+        <div class="msg-actions">
+          <button class="msg-action-btn primary" onclick="switchTab('route')"><i class="ti ti-list-check"></i> 查看完整路线</button>
+          <button class="msg-action-btn" onclick="sendPrompt('按当前偏好重新生成一版路线')"><i class="ti ti-refresh"></i> Regenerate</button>
+          <button class="msg-action-btn" onclick="switchTab('route');document.getElementById('map-section').scrollIntoView({behavior:'smooth'})"><i class="ti ti-map-2"></i> 路线地图</button>
+        </div>
+      </div>`;
+    $("chat-log").appendChild(wrap);
     $("chat-log").scrollTop=$("chat-log").scrollHeight;
-    return el;
+    return wrap;
   }
   function addMsg(role,text,options={}){
     const el = appendMsgNode(role,text);
@@ -511,13 +404,13 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
     let text = String(value ?? "").trim();
     if(!text || /^(undefined|null|nan)$/i.test(text)) return "";
     try{
-      if(/[ÃÂäåæ�]/.test(text)){
+      if(/[ÃÂäåæ ]/.test(text)){
         const bytes = Array.from(text).map(ch=>ch.charCodeAt(0));
         const repaired = new TextDecoder("utf-8", {fatal:false}).decode(new Uint8Array(bytes));
         if(repaired && /[\u4e00-\u9fff]/.test(repaired)) text = repaired;
       }
     }catch(_){}
-    return text.replace(/�/g, "").trim();
+    return text.replace(/ /g, "").trim();
   }
   function displayBudget(value, fallback="待定"){
     let text = repairMojibakeText(value);
@@ -531,6 +424,54 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
       return `${totalLike ? "总预算" : "人均"}${amount}元${suffix}`;
     }
     return text || fallback;
+  }
+  function buildRouteCardsHtml(schedule){
+    let html = "";
+    schedule.forEach((item,idx)=>{
+      const color = idx % 6;
+      const name = displayName(item);
+      const coupon = couponForPlace(name) || couponForPlace(item.place);
+      const reservation = reservationForPlace(name) || reservationForPlace(item.place);
+      const bookingNeeded = Boolean((reservation && reservation.need_booking) || item.need_booking);
+      const descParts = [
+        item.purpose ? `定位：${item.purpose}` : "",
+        item.price_text ? `参考花费：${item.price_text}` : "参考花费：价格待核验",
+        item.address ? `地址：${item.address}` : "",
+        item.address_note ? `提示：${item.address_note}` : ""
+      ].filter(Boolean);
+      html += `<div class="stop-row">
+        <div class="spine"><div class="s-dot sc-${color}"></div>${idx < schedule.length-1 ? `<div class="s-line sl-${color}" style="min-height:78px"></div>` : ""}</div>
+        <div class="stop-card">
+          <div class="card-head">
+            <div class="card-left">
+              <span class="tb tb-${color}">${esc(displayTimeRange(item.time))}</span>
+              <div class="stop-name">${esc(name)}</div>
+              <div class="stop-desc">${esc(descParts.join("\n"))}</div>
+              <div class="tags">${stopTags(item).map(t=>`<span class="tag"><i class="ti ti-check"></i>${esc(t)}</span>`).join("")}</div>
+            </div>
+            <div class="ptb ptb-${esc(item.place_role || 'place')}"><i class="ti ${roleIcon(item.place_role)}"></i><span>${esc(roleLabel(item.place_role))}</span></div>
+          </div>
+          <div class="task-row">
+            ${bookingNeeded ? `<button class="task-btn" onclick="showReservationInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-calendar-check"></i> 预订</button>` : `<button class="task-btn done" onclick="showReservationInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-check"></i> 可直接前往</button>`}
+            ${coupon ? `<button class="task-btn coupon" onclick="showCouponInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-ticket"></i> 团购券</button>` : `<button class="task-btn none" onclick="showCouponInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-ticket-off"></i> 无团购券</button>`}
+          </div>
+        </div>
+      </div>`;
+      if(idx < schedule.length-1) html += buildTransit(idx+1,schedule[idx+1]);
+    });
+    return html;
+  }
+  function buildInlineRouteCard(schedule, hard){
+    const rows = schedule.slice(0,5).map((item,idx)=>{
+      const name = displayName(item);
+      const color = ["#BA7517","#D85A30","#D4537E","#7F77DD","#378ADD"][idx%5];
+      const transit = idx < schedule.length-1 ? `<div class="inline-transit"><i class="ti ti-route"></i>${esc(transitSummary(schedule[idx+1]))}</div>` : "";
+      return `<div class="inline-stop"><div class="inline-num" style="background:${color}">${idx+1}</div><div class="inline-stop-name">${esc(name)}</div><div class="inline-stop-time">${esc(displayTimeRange(item.time))}</div></div>${transit}`;
+    }).join("");
+    return `<div class="inline-route">
+      <div class="inline-route-title"><i class="ti ti-map-2"></i>${esc(hard.date || "本周末")} · ${esc(hard.time_period || "半日")} · ${schedule.length} stops</div>
+      ${rows}
+    </div>`;
   }
   function renderTimeline(data, options={}){
     latestData = data;
@@ -553,59 +494,23 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
 
     if(!schedule.length){
       document.querySelectorAll(".route-result-msg").forEach(n=>n.remove());
-      appendRichBotNode(`<div class="chat-route-title"><i class="ti ti-route"></i>结构化路线</div><div class="empty" style="min-height:180px">这次没有返回可用 structured_plan.schedule，请检查后端规划结果。</div>`, "route-result-msg");
+      $("timeline").innerHTML = `<div class="empty"><strong>没有返回可用 structured_plan.schedule。</strong><br>请检查后端规划结果或重新生成。</div>`;
+      appendRichBotNode(`<div class="chat-route-title"><i class="ti ti-route"></i>结构化路线</div><div class="empty" style="min-height:120px">这次没有返回可用 structured_plan.schedule，请检查后端规划结果。</div>`, "route-result-msg");
       renderRightPanel(data);
       return;
     }
 
-    let html = "";
-    schedule.forEach((item,idx)=>{
-      const color = idx % 6;
-      const name = displayName(item);
-      const coupon = couponForPlace(name) || couponForPlace(item.place);
-      const reservation = reservationForPlace(name) || reservationForPlace(item.place);
-      const bookingNeeded = Boolean((reservation && reservation.need_booking) || item.need_booking);
-      const descParts = [
-        item.purpose ? `定位：${item.purpose}` : "",
-        item.price_text ? `参考花费：${item.price_text}` : "参考花费：价格待核验",
-        item.address ? `地址：${item.address}` : "",
-        idx === 0 ? "开场先稳住节奏，不急着赶场。" : "这一站负责自然衔接上一段，尽量减少绕路。"
-      ].filter(Boolean);
-      html += `<div class="stop-row">
-        <div class="spine"><div class="s-dot sc-${color}"></div>${idx < schedule.length-1 ? `<div class="s-line sl-${color}" style="min-height:84px"></div>` : ""}</div>
-        <div class="stop-card">
-          <div class="card-head">
-            <div class="card-left">
-              <span class="tb">${esc(displayTimeRange(item.time))}</span>
-              <div class="stop-name">${esc(name)}</div>
-              <div class="stop-desc">${esc(descParts.join("\n"))}</div>
-              <div class="tags">${stopTags(item).map(t=>`<span class="tag"><i class="ti ti-check"></i>${esc(t)}</span>`).join("")}</div>
-            </div>
-            <div class="ptb"><i class="ti ${roleIcon(item.place_role)}"></i><span>${esc(roleLabel(item.place_role))}</span></div>
-          </div>
-          <div class="task-row">
-            ${bookingNeeded ? `<button class="task-btn" onclick="showReservationInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-calendar-check"></i> 预订</button>` : `<button class="task-btn done" onclick="showReservationInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-check"></i> 可直接前往</button>`}
-            ${coupon ? `<button class="task-btn coupon" onclick="showCouponInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-ticket"></i> 团购券</button>` : `<button class="task-btn none" onclick="showCouponInfo('${encodeURIComponent(item.place || name)}')"><i class="ti ti-ticket-off"></i> 无团购券</button>`}
-          </div>
-        </div>
-      </div>`;
-      if(idx < schedule.length-1) html += buildTransit(idx+1,schedule[idx+1]);
-    });
+    const routeHtml = buildRouteCardsHtml(schedule);
+    $("timeline").innerHTML = routeHtml;
+    renderMap(data.route_map, data.session_id);
     document.querySelectorAll(".route-result-msg").forEach(n=>n.remove());
     appendRichBotNode(`
-      <div class="chat-route-title"><i class="ti ti-route"></i>结构化路线与地图</div>
-      <div class="day-header" style="margin-bottom:10px">
-        <span class="day-pill"><i class="ti ti-sun"></i> ${esc(hard.date || "本周末")} · ${esc(hard.time_period || "半日")}</span>
-        <div class="day-line"></div>
-        <span class="ds"><i class="ti ti-clock"></i>${esc(`${hard.duration_hours || 5} hrs`)}</span>
-        <span class="ds"><i class="ti ti-map-pin"></i>${esc(`${schedule.length} stops`)}</span>
-      </div>
-      ${html}
-      ${buildInlineMapHtml(data.route_map, data.session_id)}
+      <div class="chat-route-title"><i class="ti ti-route"></i>方案已生成</div>
+      <p>我按你当前的出发地、目的地/区域、预算、人数和快捷调整生成了一版路线。下面是精简预览，完整版本在右侧 Itinerary 页签。</p>
+      ${buildInlineRouteCard(schedule, hard)}
     `, "route-result-msg");
     renderRightPanel(data);
     if(!options.skipHistory) saveHistory();
-    return;
   }
   function renderMap(routeMap,sessionId){
     $("map-section").style.display = "block";
@@ -871,7 +776,7 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
     $("conversation-meta").textContent = "当前会话";
     addMsg("bot",WELCOME_TEXT);
   }
-  function toggleDD(id){["i","p"].forEach(k=>{const p=$(`panel-${k}`),b=$(`btn-${k}`);const open=k===id && !p.classList.contains("open");p.classList.toggle("open",open);b.classList.toggle("open",open);});}
+  function toggleDD(id){["i","p","q"].forEach(k=>{const p=$(`panel-${k}`),b=$(`btn-${k}`);if(!p||!b)return;const open=k===id && !p.classList.contains("open");p.classList.toggle("open",open);b.classList.toggle("open",open);});}
   function selectedInterests(){
     return Array.from(document.querySelectorAll("#igrid .int-chip.on span"))
       .map(el=>el.textContent.trim())
@@ -909,6 +814,24 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
     const blob = new Blob([JSON.stringify(latestData || {},null,2)],{type:"application/json"});
     const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="localmate-plan.json";a.click();URL.revokeObjectURL(a.href);
   }
+
+  function switchTab(id){
+    ["chat","route"].forEach(k=>{
+      const tab=$("tab-"+k), pane=$("pane-"+k);
+      if(tab) tab.classList.toggle("active", k===id);
+      if(pane) pane.classList.toggle("active", k===id);
+    });
+  }
+  document.addEventListener("click",function(e){
+    if(!e.target.closest(".pref-dd")){
+      ["i","p","q"].forEach(k=>{
+        const p=$("panel-"+k), b=$("btn-"+k);
+        if(p) p.classList.remove("open");
+        if(b) b.classList.remove("open");
+      });
+    }
+  });
+
   currentMessages = [{role:"bot",text:WELCOME_TEXT,time:Date.now()}];
   renderHistoryList();
   $("history-list").addEventListener("click",(e)=>{
@@ -920,7 +843,7 @@ ${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核�
   $("new-plan").addEventListener("click",resetUi);
   $("share-btn").addEventListener("click",copyShareLink);
   $("export-btn").addEventListener("click",exportPlan);
-  $("map-focus-btn").addEventListener("click",()=>$("map-section").scrollIntoView({behavior:"smooth"}));
+  $("map-focus-btn").addEventListener("click",()=>{switchTab("route");$("map-section").scrollIntoView({behavior:"smooth"});});
   if(collaborationActive && currentSessionId)startEventPolling();
 </script>
 </body>

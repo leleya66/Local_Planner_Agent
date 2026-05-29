@@ -39,6 +39,7 @@ GLOBAL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("AGENT_WORKERS", 
 PLAN_TIME_LIMIT_SECONDS = float(os.getenv("PLAN_TIME_LIMIT_SECONDS", "30"))
 PLAN_CACHE_TTL_SECONDS = int(os.getenv("PLAN_CACHE_TTL_SECONDS", "600"))
 PLAN_CACHE_MAX_ITEMS = int(os.getenv("PLAN_CACHE_MAX_ITEMS", "32"))
+FRONTEND_FILE = os.getenv("LOCALMATE_FRONTEND_FILE", "shanghai_agent_1440_v8_live.html")
 
 
 def now_ts() -> float:
@@ -208,6 +209,34 @@ def public_route_map(route_map: dict) -> dict:
     public = dict(route_map or {})
     public.pop("amap_url", None)
     return public
+
+
+def build_frontend_meta(result: dict) -> dict:
+    """Small, stable UI summary so the conversational HTML and backend stay aligned.
+
+    The frontend still renders from structured_plan.schedule as the source of truth;
+    this summary is only a convenience layer for title/meta chips and does not remove
+    any existing response fields.
+    """
+    structured = (result or {}).get("structured_plan") or {}
+    hard = structured.get("hard_constraints") or {}
+    schedule = structured.get("schedule") or []
+    names = []
+    for item in schedule:
+        if isinstance(item, dict):
+            names.append(str(item.get("display_name") or item.get("place") or "").strip())
+    names = [n for n in names if n]
+    return {
+        "style": "conversational_tabs_v9",
+        "title": " + ".join(names[:2]) if names else "上海周末出行规划 Agent",
+        "date": hard.get("date") or "本周末",
+        "time_period": hard.get("time_period") or "半日",
+        "stops": len(schedule),
+        "duration_hours": hard.get("duration_hours") or 5,
+        "budget": hard.get("budget") or "预算待定",
+        "route_logic_mode": hard.get("route_logic_mode") or "",
+        "adjustment_modes": hard.get("adjustment_modes") or [],
+    }
 
 
 class PlanRequest(BaseModel):
@@ -710,7 +739,7 @@ async def shutdown():
 @app.get("/")
 async def index():
     return FileResponse(
-        "shanghai_agent_1440_v8_live.html",
+        FRONTEND_FILE,
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
@@ -736,7 +765,7 @@ async def index_classic():
 async def index_v8():
     """兼容旧链接：新版 V8 风格前端。"""
     return FileResponse(
-        "shanghai_agent_1440_v8_live.html",
+        FRONTEND_FILE,
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
@@ -1039,6 +1068,7 @@ async def _plan_impl(req: PlanRequest, session_id: str):
         "coupon_info": result.get("coupon_info", {}),
         "reservation_options": result.get("reservation_options", []),
         "route_map": public_route_map(result.get("route_map", {})),
+        "frontend_meta": build_frontend_meta(result),
         "node_timings": result.get("node_timings", {}),
         "generation_time_seconds": result.get("generation_time_seconds"),
         "generation_time_over_limit": result.get("generation_time_over_limit"),

@@ -3306,7 +3306,7 @@ def repair_mojibake_text(value) -> str:
     text = str(value or "").strip()
     if not text:
         return ""
-    if any(marker in text for marker in ["Ã", "Â", "ä", "å", "æ", " "]):
+    if any(marker in text for marker in ["Ã", "Â", "ä", "å", "æ", "�"]):
         try:
             repaired = text.encode("latin1", errors="ignore").decode("utf-8", errors="ignore").strip()
             # 只有修复后确实更像中文/正常文本时才采用，避免误伤英文。
@@ -3314,7 +3314,7 @@ def repair_mojibake_text(value) -> str:
                 text = repaired
         except Exception:
             pass
-    return text.replace(" ", "").strip()
+    return text.replace("�", "").strip()
 
 
 def normalize_budget_text(value, default: str = "") -> str:
