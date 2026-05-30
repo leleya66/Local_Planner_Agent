@@ -165,6 +165,52 @@ SUB_TYPE_RULES = [
 ]
 
 
+
+INTEREST_TAG_RULES = {
+    "美食": ["餐厅", "美食", "吃饭", "火锅", "小笼", "生煎", "面", "烤肉", "江浙", "本帮", "日料", "西餐", "甜品", "奶茶", "冰城"],
+    "文化": ["博物馆", "纪念馆", "历史", "古镇", "寺", "文化", "书店", "图书馆", "老街", "石库门"],
+    "购物": ["商场", "广场", "百联", "万达", "环球港", "合生汇", "购物", "市集", "商业街", "步行街"],
+    "艺术": ["美术馆", "艺术", "画廊", "展", "剧场", "音乐厅", "创意", "设计", "演艺"],
+    "自然": ["公园", "森林", "湿地", "郊野", "草坪", "植物", "动物园", "湖", "滨江", "绿地", "户外"],
+    "拍照": ["打卡", "外滩", "陆家嘴", "夜景", "天台", "红砖", "建筑", "小镇", "街区", "滨江", "出片"],
+    "展览": ["展览", "展馆", "美术馆", "博物馆", "艺术馆", "画廊", "馆"],
+    "咖啡": ["咖啡", "coffee", "manner", "seesaw", "arabica", "甜品", "下午茶", "面包", "烘焙", "奶茶"],
+    "散步": ["散步", "citywalk", "路", "街", "步道", "滨江", "绿道", "老街", "步行街", "公园"],
+    "亲子": ["亲子", "儿童", "家庭", "乐园", "动物园", "科技馆", "自然博物馆", "海洋", "迪士尼", "游乐"],
+}
+
+PACE_TAG_RULES = {
+    "Relaxed": ["咖啡", "甜品", "下午茶", "电影", "影院", "汤泉", "泡汤", "书店", "室内", "休闲", "餐厅"],
+    "Balanced": ["美食", "文化", "艺术", "散步", "公园", "商圈", "博物馆", "展览"],
+    "Packed": ["公园", "乐园", "游乐", "徒步", "骑行", "城市漫步", "citywalk", "展览", "主题乐园"],
+}
+
+def _infer_interest_tags(place_name: str, place_type: str, sub_type: str, search_tags: str = "") -> str:
+    text = f"{place_name} {place_type} {sub_type} {search_tags}".lower()
+    hits = []
+    for tag, words in INTEREST_TAG_RULES.items():
+        if any(str(w).lower() in text for w in words):
+            hits.append(tag)
+    if not hits:
+        if place_type == "restaurant":
+            hits.append("美食")
+        elif place_type == "attraction":
+            hits.append("文化")
+        elif place_type == "leisure":
+            hits.append("散步")
+    return "、".join(dict.fromkeys(hits))
+
+def _infer_pace_tags(place_name: str, place_type: str, sub_type: str, search_tags: str = "") -> str:
+    text = f"{place_name} {place_type} {sub_type} {search_tags}".lower()
+    hits = []
+    for tag, words in PACE_TAG_RULES.items():
+        if any(str(w).lower() in text for w in words):
+            hits.append(tag)
+    if not hits:
+        hits.append("Balanced")
+    return "、".join(dict.fromkeys(hits))
+
+
 def _infer_sub_type(place_name: str, place_type: str) -> str:
     text = str(place_name or "").lower()
     for sub_type, keywords in SUB_TYPE_RULES:
@@ -200,7 +246,8 @@ def _load_all() -> pd.DataFrame:
     frames = []
     required_cols = [
         "placeID", "placeName", "是否需要预约", "是否有余位", "余位信息", "是否有团购",
-        "最低价格", "最高价格", "地点类型", "primary_type", "sub_type", "search_tags"
+        "最低价格", "最高价格", "地点类型", "primary_type", "sub_type", "search_tags", "interest_tags", "pace_tags",
+        "amap_verified_name", "amap_verified_status", "amap_verified_address", "amap_verified_location"
     ]
 
     for f in _EXCEL_FILES:
@@ -250,6 +297,24 @@ def _load_all() -> pd.DataFrame:
         )
         df["search_tags"] = df.apply(
             lambda row: _build_search_tags(row.get("placeName", ""), row.get("地点类型", ""), row.get("sub_type", "")),
+            axis=1,
+        )
+        df["interest_tags"] = df.apply(
+            lambda row: _infer_interest_tags(row.get("placeName", ""), row.get("地点类型", ""), row.get("sub_type", ""), row.get("search_tags", "")),
+            axis=1,
+        )
+        df["pace_tags"] = df.apply(
+            lambda row: _infer_pace_tags(row.get("placeName", ""), row.get("地点类型", ""), row.get("sub_type", ""), row.get("search_tags", "")),
+            axis=1,
+        )
+        # Merge refined tags back into search_tags so existing matching code benefits
+        # without requiring schema changes elsewhere.
+        df["search_tags"] = df.apply(
+            lambda row: "、".join(dict.fromkeys(
+                [x for x in str(row.get("search_tags", "")).split("、") if x] +
+                [x for x in str(row.get("interest_tags", "")).split("、") if x] +
+                [x for x in str(row.get("pace_tags", "")).split("、") if x]
+            )),
             axis=1,
         )
         df = df[df["placeName"].ne("") & df["placeID"].ne("")]

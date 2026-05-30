@@ -39,7 +39,6 @@ GLOBAL_EXECUTOR = ThreadPoolExecutor(max_workers=int(os.getenv("AGENT_WORKERS", 
 PLAN_TIME_LIMIT_SECONDS = float(os.getenv("PLAN_TIME_LIMIT_SECONDS", "30"))
 PLAN_CACHE_TTL_SECONDS = int(os.getenv("PLAN_CACHE_TTL_SECONDS", "600"))
 PLAN_CACHE_MAX_ITEMS = int(os.getenv("PLAN_CACHE_MAX_ITEMS", "32"))
-FRONTEND_FILE = os.getenv("LOCALMATE_FRONTEND_FILE", "shanghai_agent_1440_v8_live.html")
 
 
 def now_ts() -> float:
@@ -95,11 +94,6 @@ def should_vary_route(state: dict, latest_text: str = "") -> bool:
         "换一个",
         "换条路线",
         "再来一个",
-        "再来一版",
-        "重新生成",
-        "重生成",
-        "重新规划",
-        "regenerate",
         "不满意",
     ]
     if any(term in text for term in open_terms):
@@ -147,6 +141,7 @@ def log_generation_time(session_id: str, elapsed: float, stage: str, cache_hit: 
 
 
 def save_session(session_id: str, state: dict) -> None:
+    state = purge_transient_anchor_exclusions(state or {})
     previous = session_store.get(session_id) or {}
     if "__events" in previous and "__events" not in state:
         state["__events"] = previous.get("__events", [])
@@ -216,39 +211,22 @@ def public_route_map(route_map: dict) -> dict:
     return public
 
 
-def clear_saved_anchor_history(state: dict) -> dict:
-    """Do not persist old start/destination anchors across turns.
 
-    Older versions saved replaced_destination_keys/replaced_destinations so downstream
-    code could filter stale anchors. The product behavior is now simpler: keep only
-    the latest fixed_departure/fixed_destination in the session. Temporary exclusion
-    keys may exist during one planning run, but they are removed before saving.
-    """
+def clear_saved_anchor_history(state: dict) -> dict:
+    """Keep only latest fixed start/destination/area anchors in session."""
     state = dict(state or {})
-    for key in [
-        "replaced_destination_keys",
-        "replaced_destinations",
-        "replaced_departure_keys",
-        "replaced_departures",
-    ]:
+    for key in ["replaced_destination_keys", "replaced_destinations", "replaced_departure_keys", "replaced_departures"]:
         state.pop(key, None)
     collected = dict(state.get("collected_info") or {})
-    for key in [
-        "replaced_destination_keys",
-        "replaced_destinations",
-        "replaced_departure_keys",
-        "replaced_departures",
-    ]:
+    for key in ["replaced_destination_keys", "replaced_destinations", "replaced_departure_keys", "replaced_departures"]:
         collected.pop(key, None)
     state["collected_info"] = collected
     return state
 
 
 def set_transient_anchor_exclusions(state: dict, names: list) -> dict:
-    """Remember stale anchors only for the current planning call, not for the session."""
     state = dict(state or {})
-    clean_names = []
-    clean_keys = []
+    clean_names, clean_keys = [], []
     for name in names or []:
         text = str(name or "").strip()
         if not text:
@@ -264,7 +242,6 @@ def set_transient_anchor_exclusions(state: dict, names: list) -> dict:
 
 
 def purge_transient_anchor_exclusions(state: dict) -> dict:
-    """Remove one-run exclusion/debug anchor lists before caching or returning state."""
     state = clear_saved_anchor_history(state or {})
     for key in ["exclude_anchor_names_once", "exclude_anchor_keys_once"]:
         state.pop(key, None)
@@ -273,109 +250,6 @@ def purge_transient_anchor_exclusions(state: dict) -> dict:
         collected.pop(key, None)
     state["collected_info"] = collected
     return state
-
-
-def estimate_budget_from_structured_plan(result: dict) -> dict:
-    """Compute a concrete, per-version budget from the final schedule."""
-    structured = (result or {}).get("structured_plan") or {}
-    hard = structured.get("hard_constraints") or {}
-    schedule = structured.get("schedule") or []
-    num_people = safe_int(hard.get("num_people"), 1)
-    per_min = 0.0
-    per_max = 0.0
-    unknown_count = 0
-    for item in schedule:
-        if not isinstance(item, dict):
-            continue
-        price_text = str(item.get("price_text") or "")
-        low = float(item.get("price_min") or 0)
-        high = float(item.get("price_max") or low or 0)
-        if "待核验" in price_text and low <= 0 and high <= 0:
-            unknown_count += 1
-            continue
-        per_min += max(0.0, low)
-        per_max += max(0.0, high if high >= low else low)
-    if per_min <= 0 and per_max <= 0 and unknown_count:
-        text = "预算待核验"
-    elif int(per_min) == int(per_max):
-        text = f"预计人均约{int(round(per_max))}元，总计约{int(round(per_max * num_people))}元（{num_people}人）"
-    else:
-        text = (
-            f"预计人均约{int(round(per_min))}-{int(round(per_max))}元，"
-            f"总计约{int(round(per_min * num_people))}-{int(round(per_max * num_people))}元（{num_people}人）"
-        )
-    if unknown_count and text != "预算待核验":
-        text += f"；另有{unknown_count}个地点价格待核验"
-    requested = hard.get("requested_budget") or hard.get("budget") or ((result or {}).get("collected_info") or {}).get("budget")
-    return {
-        "per_person_min": int(round(per_min)),
-        "per_person_max": int(round(per_max)),
-        "total_min": int(round(per_min * num_people)),
-        "total_max": int(round(per_max * num_people)),
-        "unknown_count": unknown_count,
-        "num_people": num_people,
-        "text": text,
-        "requested_budget": requested or "",
-    }
-
-
-def attach_budget_estimate(result: dict) -> dict:
-    """Update result.structured_plan with a budget that follows the final route."""
-    if not isinstance(result, dict):
-        return result
-    structured = dict(result.get("structured_plan") or {})
-    if not structured:
-        return result
-    hard = dict(structured.get("hard_constraints") or {})
-    requested = hard.get("requested_budget") or hard.get("budget") or ((result.get("collected_info") or {}).get("budget")) or ""
-    estimate = estimate_budget_from_structured_plan({**result, "structured_plan": {**structured, "hard_constraints": hard}})
-    hard["requested_budget"] = requested
-    hard["budget_estimate"] = estimate
-    hard["budget_estimate_text"] = estimate.get("text") or "预算待核验"
-    hard["budget"] = hard["budget_estimate_text"]
-    structured["hard_constraints"] = hard
-    structured["budget_estimate"] = estimate
-    result["structured_plan"] = structured
-    return result
-
-
-def is_regenerate_request(text: str) -> bool:
-    normalized = str(text or "").strip().lower().replace(" ", "")
-    patterns = [
-        "regenerate", "重新生成", "重生成", "再生成", "再来一版", "再来一个",
-        "换条路线", "换一条路线", "重新规划", "按当前偏好重新生成", "不变",
-    ]
-    return any(pattern in normalized for pattern in patterns)
-
-
-def build_frontend_meta(result: dict) -> dict:
-    """Small, stable UI summary so the conversational HTML and backend stay aligned.
-
-    The frontend still renders from structured_plan.schedule as the source of truth;
-    this summary is only a convenience layer for title/meta chips and does not remove
-    any existing response fields.
-    """
-    structured = (result or {}).get("structured_plan") or {}
-    hard = structured.get("hard_constraints") or {}
-    schedule = structured.get("schedule") or []
-    names = []
-    for item in schedule:
-        if isinstance(item, dict):
-            names.append(str(item.get("display_name") or item.get("place") or "").strip())
-    names = [n for n in names if n]
-    return {
-        "style": "conversational_tabs_v9",
-        "title": " + ".join(names[:2]) if names else "上海周末出行规划 Agent",
-        "date": hard.get("date") or "本周末",
-        "time_period": hard.get("time_period") or "半日",
-        "stops": len(schedule),
-        "duration_hours": hard.get("duration_hours") or 5,
-        "budget": hard.get("budget_estimate_text") or hard.get("budget") or "预算待定",
-        "requested_budget": hard.get("requested_budget") or "",
-        "budget_estimate": hard.get("budget_estimate") or {},
-        "route_logic_mode": hard.get("route_logic_mode") or "",
-        "adjustment_modes": hard.get("adjustment_modes") or [],
-    }
 
 
 class PlanRequest(BaseModel):
@@ -402,21 +276,61 @@ class PlaceReserveRequest(BaseModel):
     place_name: str
 
 
+def strip_ui_preference_hints(text: str) -> str:
+    """Remove frontend-injected Interests/Pace hints before anchor/satisfaction parsing.
+
+    The hints are useful for ranking, but they must not participate in departure/
+    destination regex extraction; otherwise strings like "目的地改为迪士尼（兴趣偏好：美食）"
+    can be treated as a long place name, or later turns can be swallowed by the
+    satisfaction handler.
+    """
+    s = str(text or "")
+    s = re.sub(r"[（(]\s*(?:兴趣偏好|Interests?|节奏偏好|Pace)[:：][^）)]*[）)]", "", s, flags=re.I)
+    s = re.sub(r"(?:兴趣偏好|Interests?)[:：][^；;。\n]*", "", s, flags=re.I)
+    s = re.sub(r"(?:节奏偏好|Pace)[:：][^；;。\n]*", "", s, flags=re.I)
+    s = re.sub(r"\s+", " ", s).strip(" ，,。；;｜|")
+    return s.strip()
+
+
+def is_route_edit_or_preference_text(text: str) -> bool:
+    """True when a post-plan message is a route edit/preference, not satisfaction."""
+    raw = str(text or "")
+    cleaned = strip_ui_preference_hints(raw)
+    normalized = re.sub(r"\s+", "", cleaned.lower())
+    edit_terms = [
+        "出发地", "起点", "从", "目的地", "终点", "想去", "去", "附近", "周围", "周边",
+        "换", "改", "调整", "重新", "regenerate", "兴趣", "偏好", "节奏", "pace",
+        "美食", "文化", "购物", "艺术", "自然", "拍照", "展览", "咖啡", "散步", "亲子",
+        "便宜", "近一点", "室内", "团购", "少走路", "不要", "想", "希望"
+    ]
+    return any(term in normalized or term in raw for term in edit_terms)
+
+
 def is_satisfied_feedback(text: str) -> bool:
-    """判断用户是否明确满意。保守处理：包含不满意/修改诉求时不算满意。"""
-    normalized = (text or "").strip().lower()
+    """Only treat a short, explicit confirmation as satisfaction.
+
+    Important: after a plan is shown, users often send edits like
+    "目的地改为迪士尼｜兴趣：美食｜节奏：Balanced". Older logic used broad
+    substrings such as "好/行", so preference or edit messages could be swallowed
+    as "满意". This function is intentionally strict.
+    """
+    raw = str(text or "").strip()
+    if not raw:
+        return False
+    if is_route_edit_or_preference_text(raw):
+        return False
+    normalized = re.sub(r"\s+", "", raw.lower())
     negative_patterns = [
-        "不满意", "不太满意", "不行", "不好", "不喜欢", "换", "重新",
-        "调整", "修改", "太远", "太贵", "太累", "不要", "还有", "但是",
-        "能不能", "可以再", "希望", "想要", "不合适"
+        "不满意", "不太满意", "不行", "不好", "不喜欢", "要改", "想改",
+        "调整", "修改", "太远", "太贵", "太累", "不要", "但是", "不合适"
     ]
-    positive_patterns = [
-        "满意", "可以", "挺好", "很好", "好", "ok", "okay", "没问题",
-        "就这个", "确认", "不错", "行"
-    ]
-    has_negative = any(p in normalized for p in negative_patterns)
-    has_positive = any(p in normalized for p in positive_patterns)
-    return has_positive and not has_negative
+    if any(p in normalized for p in negative_patterns):
+        return False
+    explicit_positive = {
+        "满意", "可以", "挺好", "很好", "ok", "okay", "没问题", "就这个",
+        "确认", "不错", "行", "可以了", "就这样", "就这样吧"
+    }
+    return normalized in explicit_positive or normalized.startswith(("满意", "可以就这个", "确认这个"))
 
 
 def is_departure_confirm_text(text: str) -> bool:
@@ -431,6 +345,74 @@ def build_revision_input(previous_input: str, feedback: str) -> str:
         f"用户对上一版方案不满意，新的反馈或补充需求是：{feedback}\n"
         "请根据用户反馈重新调整方案，避免重复上一版不满意的点。"
     )
+
+def prepare_route_revision_state(state: dict, latest_text: str, session_id: str = "") -> dict:
+    """Prepare an existing-plan session for any modification request.
+
+    This is intentionally used even when awaiting_satisfaction is False. The old
+    code only treated edits as revisions inside the satisfaction branch, so
+    Quick adjust / Regenerate / Interests / Pace often reused the same route.
+    """
+    state = dict(state or {})
+    previous_places = structured_schedule_places(state)
+    if previous_places:
+        locked_keys = {
+            agent_workflow.normalize_place_text(place)
+            for place in (state.get("locked_places") or [])
+        }
+        avoid_candidates = [
+            place for place in previous_places
+            if agent_workflow.normalize_place_text(place) not in locked_keys
+        ]
+        state["avoid_places"] = list(dict.fromkeys((state.get("avoid_places") or []) + avoid_candidates))
+        state.setdefault("previous_plan_places", []).append(previous_places)
+
+    quick_modes = detect_quick_adjustments(latest_text)
+    regenerate_requested = is_regenerate_request(latest_text)
+    if regenerate_requested and "regenerate" not in quick_modes:
+        quick_modes = list(quick_modes) + ["regenerate"]
+    if quick_modes:
+        state["adjustment_modes"] = quick_modes
+        state["adjustment_mode"] = next((m for m in quick_modes if m != "regenerate"), quick_modes[0])
+        if quick_modes == ["regenerate"] or (regenerate_requested and len(quick_modes) == 1):
+            state["user_input"] = build_revision_input(
+                state.get("user_input", ""),
+                "请按当前已确认的出发地、目的地/区域、人数、预算、兴趣和节奏重新生成一版不同路线；替换上一版非锁定站点，避免原样返回。",
+            )
+        else:
+            effective_modes = [m for m in quick_modes if m != "regenerate"] or quick_modes
+            state["user_input"] = build_quick_revision_input(state.get("user_input", ""), effective_modes)
+    else:
+        state["adjustment_modes"] = []
+        state["adjustment_mode"] = None
+        state["user_input"] = build_revision_input(state.get("user_input", ""), latest_text)
+
+    state["force_regenerate"] = True
+    state["route_variant_seed"] = f"revision:{session_id}:{time.time_ns()}:{uuid.uuid4().hex[:8]}"
+    for key in [
+        "final_plan", "structured_plan", "weather_info", "route_distance_info", "route_map",
+        "coupon_info", "reservation_options"
+    ]:
+        state[key] = None
+    state["awaiting_satisfaction"] = False
+    state["revision_count"] = int(state.get("revision_count") or 0) + 1
+    return state
+
+
+def is_existing_plan_modification(state: dict, latest_text: str) -> bool:
+    """Return True when an existing plan should be replanned instead of treated as new info."""
+    if not (state or {}).get("structured_plan"):
+        return False
+    text = str(latest_text or "").strip()
+    if not text:
+        return False
+    if is_satisfied_feedback(text):
+        return False
+    change_terms = [
+        "换", "改", "重新", "regenerate", "再来", "近一点", "便宜", "室内", "团购", "少走路",
+        "目的地", "出发地", "起点", "终点", "从", "去", "想去", "兴趣", "偏好", "节奏", "pace",
+    ]
+    return bool(detect_quick_adjustments(text) or is_regenerate_request(text) or any(term in text for term in change_terms))
 
 
 def structured_schedule_places(state: dict) -> list[str]:
@@ -472,21 +454,10 @@ def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
 
     latest_departure_hint = agent_workflow.extract_departure_hint_from_user_text(text)
     latest_destination_hint = agent_workflow.extract_destination_hint_from_user_text(text)
-
-    if agent_workflow.is_departure_edit_value(old_fixed_destination, text, latest_departure_hint or ""):
-        # 兜底清理：上一轮若已把“出发地换为X”误存成目的地，本轮不能继续保留。
-        old_fixed_destination = ""
-        for key in ["fixed_destination", "active_destination_anchor"]:
-            state.pop(key, None)
-        for key in ["fixed_destination", "active_destination_anchor", "location"]:
-            collected.pop(key, None)
-        collected["_location_explicit"] = False
-        intent_location = str(intent.get("location") or "").strip()
-        if agent_workflow.is_departure_edit_value(intent_location, text, latest_departure_hint or ""):
-            intent.pop("location", None)
-
+    latest_area_anchor = agent_workflow.latest_area_anchor_change(text, old_fixed_destination or collected.get("area_anchor") or collected.get("location") or "")
     departure_change = bool(latest_departure_hint) and agent_workflow.user_requests_departure_change(text, old_fixed_departure)
     destination_change = bool(latest_destination_hint) and agent_workflow.user_requests_destination_change(text, old_fixed_destination)
+    area_anchor_change = bool(latest_area_anchor)
 
     # 先处理显式起点修改；没有改出发地时必须保留旧出发地。
     if departure_change:
@@ -522,7 +493,7 @@ def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
                 continue
             previous_destination_candidates.append(place)
 
-        stale_anchor_names = []
+        replaced_names = []
         for place in previous_destination_candidates:
             name = str(place or "").strip()
             if not name:
@@ -531,10 +502,9 @@ def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
                 continue
             if old_fixed_departure and agent_workflow.same_route_place(name, old_fixed_departure):
                 continue
-            stale_anchor_names.append(name)
-        stale_anchor_names = list(dict.fromkeys(stale_anchor_names))
-        # 旧目的地只用于本轮过滤，不再持久化到 session。
-        state = set_transient_anchor_exclusions(state, stale_anchor_names)
+            replaced_names.append(name)
+        replaced_names = list(dict.fromkeys(replaced_names))
+        state = set_transient_anchor_exclusions(state, replaced_names)
 
         # 只保留原出发地和最新目的地；不要保留旧目的地。
         kept_locked = []
@@ -550,16 +520,33 @@ def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
         collected["_location_explicit"] = True
         collected["center_anchor"] = new_destination
         intent["location"] = new_destination
-        # 清掉容易把旧目的地带回来的历史候选；只使用本轮 stale_anchor_names 临时判断，不写入 session。
-        def _is_stale_anchor(value: str) -> bool:
-            return any(agent_workflow.same_route_place(str(value or ""), old) for old in stale_anchor_names)
-        state["avoid_places"] = [p for p in (state.get("avoid_places") or []) if not _is_stale_anchor(str(p))]
+        # 清掉容易把旧目的地带回来的历史候选：上一版目的地、上一版路线点、avoid/previous_plan_places 里的旧目的地。
+        state["avoid_places"] = [p for p in (state.get("avoid_places") or []) if not agent_workflow.is_replaced_destination_place(str(p), {**state, "collected_info": collected}, new_destination)]
         cleaned_previous = []
         for route in (state.get("previous_plan_places") or []):
-            cleaned_previous.append([p for p in route if not _is_stale_anchor(str(p))])
+            cleaned_previous.append([p for p in route if not agent_workflow.is_replaced_destination_place(str(p), {**state, "collected_info": collected}, new_destination)])
         state["previous_plan_places"] = cleaned_previous
         if new_destination not in locked:
             locked.append(new_destination)
+    elif area_anchor_change:
+        new_anchor = str((latest_area_anchor or {}).get("anchor") or "").strip()
+        previous_destination_candidates = [old_fixed_destination, state.get("fixed_destination"), collected.get("fixed_destination"), collected.get("location"), intent.get("location")]
+        state = set_transient_anchor_exclusions(state, [p for p in previous_destination_candidates if p and not agent_workflow.same_route_place(str(p), new_anchor)])
+        state.pop("fixed_destination", None)
+        state.pop("active_destination_anchor", None)
+        collected.pop("fixed_destination", None)
+        collected.pop("active_destination_anchor", None)
+        collected["area_anchor"] = new_anchor
+        collected["area_anchor_mode"] = (latest_area_anchor or {}).get("mode", "area")
+        collected["exclude_anchor_from_schedule"] = True
+        collected["_area_anchor_explicit"] = True
+        collected["_location_explicit"] = False
+        collected["location"] = (latest_area_anchor or {}).get("query") or "周边休闲活动"
+        collected["center_anchor"] = new_anchor
+        intent["area_anchor"] = new_anchor
+        intent["area_anchor_mode"] = collected["area_anchor_mode"]
+        intent.pop("location", None)
+        locked = [p for p in locked if old_fixed_departure and agent_workflow.same_route_place(str(p), old_fixed_departure)]
     elif old_fixed_destination and agent_workflow.is_concrete_location_anchor(old_fixed_destination):
         state["fixed_destination"] = old_fixed_destination
         state["active_destination_anchor"] = old_fixed_destination
@@ -605,9 +592,9 @@ def update_locked_places_from_state(state: dict, latest_text: str = "") -> dict:
             locked.append(candidate)
 
     persistent_anchor_keys = {agent_workflow.normalize_place_text(p) for p in [
-        collected.get("fixed_departure"), collected.get("fixed_destination"), collected.get("center_anchor")
+        collected.get("fixed_departure"), collected.get("fixed_destination"), collected.get("area_anchor"), collected.get("center_anchor")
     ] if p}
-    replaced_keys = set(state.get("exclude_anchor_keys_once") or [])
+    replaced_keys = set(state.get("exclude_anchor_keys_once") or []) | set(collected.get("exclude_anchor_keys_once") or [])
     current_destination_key = agent_workflow.normalize_place_text(collected.get("fixed_destination") or "")
     kept = []
     for place in locked:
@@ -650,6 +637,17 @@ QUICK_ADJUSTMENT_MAP = {
     "少走路": "less_walk",
 }
 
+
+
+
+def is_regenerate_request(text: str) -> bool:
+    normalized = str(text or "").strip().lower().replace(" ", "")
+    patterns = [
+        "regenerate", "重新生成", "重生成", "再生成", "再来一版", "再来一个",
+        "换条路线", "换一条路线", "重新规划", "按当前偏好重新生成", "方案不变",
+        "不同路线", "不要重复",
+    ]
+    return any(pattern in normalized for pattern in patterns)
 
 def detect_quick_adjustments(text: str) -> list[str]:
     normalized = (text or "").strip().replace(" ", "")
@@ -701,13 +699,7 @@ def safe_int(value, default: int = 1) -> int:
         match = re.search(r"\d+", text)
         if match:
             return int(match.group())
-        normalized = re.sub(r"\s+", "", text)
-        if any(word in normalized for word in ["父母", "爸妈", "爸爸妈妈", "爹妈"]) and re.search(r"(?:我|我们)?(?:和|跟|带|陪)", normalized):
-            return 3
-        match = re.search(r"一家\s*([一二两俩三四五六七八九十])\s*口", normalized)
-        if match:
-            return chinese_numbers.get(match.group(1), default)
-        match = re.search(r"([一二两俩三四五六七八九十])\s*(?:个)?人?", normalized)
+        match = re.search(r"([一二两俩三四五六七八九十])\s*(?:个)?人?", text)
         if match:
             return chinese_numbers.get(match.group(1), default)
         return default
@@ -886,7 +878,7 @@ async def shutdown():
 @app.get("/")
 async def index():
     return FileResponse(
-        FRONTEND_FILE,
+        "shanghai_agent_1440_v8_live.html",
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
@@ -912,7 +904,7 @@ async def index_classic():
 async def index_v8():
     """兼容旧链接：新版 V8 风格前端。"""
     return FileResponse(
-        FRONTEND_FILE,
+        "shanghai_agent_1440_v8_live.html",
         headers={
             "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
             "Pragma": "no-cache",
@@ -1003,14 +995,17 @@ async def _plan_impl(req: PlanRequest, session_id: str):
     """
     cleanup_sessions()
     request_started_at = time.perf_counter()
+    clean_latest_text = strip_ui_preference_hints(req.user_input)
+    regenerate_requested = is_regenerate_request(clean_latest_text)
     # ── Step 1: 恢复或初始化 session ──────────────────────────
 
     if session_id and session_id in session_store:
         # 多轮对话：追加用户新输入到历史输入
         state = dict(session_store[session_id])
         state["latest_user_input"] = req.user_input
-        state = update_locked_places_from_state(state, req.user_input)
-        save_session(session_id, purge_transient_anchor_exclusions(dict(state)))
+        state["latest_user_command"] = clean_latest_text
+        state = update_locked_places_from_state(state, clean_latest_text)
+        save_session(session_id, state)
         append_event(session_id, "user", req.user_input, client_id=req.client_id or "", speaker=req.speaker or "")
         print(f"🔄 Session [{session_id}] 继续对话")
 
@@ -1039,7 +1034,7 @@ async def _plan_impl(req: PlanRequest, session_id: str):
                 )
             }, req.client_id or "")
 
-        # 方案已生成后，下一轮输入先视为满意度反馈。
+        # 方案已生成后，只有“明确短句确认”才记录满意；任何修改/偏好/锚点输入都继续重规划。
         if state.get("awaiting_satisfaction"):
             if bool(req.enable_group_discussion) or wants_group_discussion(req.user_input):
                 state["awaiting_satisfaction"] = False
@@ -1047,7 +1042,7 @@ async def _plan_impl(req: PlanRequest, session_id: str):
                 if discussion_response is not None:
                     return discussion_response
 
-            if is_satisfied_feedback(req.user_input):
+            if is_satisfied_feedback(clean_latest_text):
                 state["awaiting_satisfaction"] = False
                 state["confirmed"] = None
                 save_session(session_id, state)
@@ -1070,25 +1065,26 @@ async def _plan_impl(req: PlanRequest, session_id: str):
                 state["avoid_places"] = list(dict.fromkeys((state.get("avoid_places") or []) + avoid_candidates))
                 state.setdefault("previous_plan_places", []).append(previous_places)
 
-            quick_modes = detect_quick_adjustments(req.user_input)
-            regenerate_requested = is_regenerate_request(req.user_input)
+            quick_modes = detect_quick_adjustments(clean_latest_text)
+            if regenerate_requested and "regenerate" not in quick_modes:
+                quick_modes = list(quick_modes) + ["regenerate"]
+                state["force_regenerate"] = True
+                state["route_variant_seed"] = f"regen:{session_id}:{time.time_ns()}:{uuid.uuid4().hex[:8]}"
             if quick_modes:
                 state["adjustment_modes"] = quick_modes
                 state["adjustment_mode"] = quick_modes[0]
-                state["user_input"] = build_quick_revision_input(state.get("user_input", ""), quick_modes)
-            elif regenerate_requested:
-                state["adjustment_modes"] = ["regenerate"]
-                state["adjustment_mode"] = "regenerate"
-                state["force_regenerate"] = True
-                state["user_input"] = build_revision_input(
-                    state.get("user_input", ""),
-                    "按当前固定的最新出发地、目的地、人数、时间和预算重新生成一版不同路线；不要原样复用上一版非锁定地点。"
-                )
+                if regenerate_requested and quick_modes == ["regenerate"]:
+                    state["user_input"] = build_revision_input(
+                        state.get("user_input", ""),
+                        "请按当前已收集的路线锚点、预算、人数和交通偏好重新生成一版不同路线；必须替换上一版中非用户锁定的地点，避免原样返回。"
+                    )
+                else:
+                    effective_modes = [m for m in quick_modes if m != "regenerate"] or quick_modes
+                    state["user_input"] = build_quick_revision_input(state.get("user_input", ""), effective_modes)
             else:
                 state["adjustment_modes"] = []
                 state["adjustment_mode"] = None
-                state.pop("force_regenerate", None)
-                state["user_input"] = build_revision_input(state.get("user_input", ""), req.user_input)
+                state["user_input"] = build_revision_input(state.get("user_input", ""), clean_latest_text or req.user_input)
             state["final_plan"] = None
             state["structured_plan"] = None
             state["weather_info"] = None
@@ -1107,7 +1103,11 @@ async def _plan_impl(req: PlanRequest, session_id: str):
                 discussion_response = start_group_discussion_if_needed(state, session_id, True, force_new=True, client_id=req.client_id or "")
                 if discussion_response is not None:
                     return discussion_response
-            state["user_input"] = f"{state['user_input']} {req.user_input}"
+            if is_existing_plan_modification(state, clean_latest_text or req.user_input):
+                state = prepare_route_revision_state(state, clean_latest_text or req.user_input, session_id)
+                print(f"🔁 已有方案收到修改请求，开始第 {state['revision_count']} 次调整方案")
+            else:
+                state["user_input"] = f"{state['user_input']} {req.user_input}"
     else:
         # 首次请求：新建 session
         state = agent_workflow.AgentState(
@@ -1154,24 +1154,39 @@ async def _plan_impl(req: PlanRequest, session_id: str):
         print(f"🆕 新建 Session [{session_id}]")
 
     # ── Step 2: 执行信息收集（异步非阻塞）─────────────────────
+    # latest_user_input 必须在 collect 前写入，否则信息抽取会从历史 user_input 中捞回旧目的地/旧出发地。
+    # 只有首轮允许缺项追问；已有方案后的“换目的地/换出发地/快捷调整”直接按默认值补齐，不再反复追问。
+    if state.get("structured_plan") or state.get("revision_count") or state.get("awaiting_satisfaction"):
+        state["info_followup_asked"] = True
+    state["latest_user_input"] = req.user_input
+    state["latest_user_command"] = clean_latest_text
     loop = asyncio.get_event_loop()
     try:
         info_started = time.perf_counter()
-        new_state = await loop.run_in_executor(
-            GLOBAL_EXECUTOR,
-            agent_workflow.collect_required_info_for_api,
-            state
+        # 不再用 wait_for 强制截断信息收集：首次需求需要完整抽取。
+        # 但已有方案后的“换出发地/换目的地/快捷调整/Regenerate/兴趣/节奏”只需要规则更新，
+        # 避免每轮都多跑一次 LLM，既减少耗时，也避免 UI 偏好污染地点抽取。
+        use_rule_collect = bool(
+            int(state.get("revision_count") or 0) > 0
+            or state.get("force_regenerate")
+            or state.get("adjustment_modes")
+            or state.get("latest_user_command")
+            and is_existing_plan_modification({**state, "structured_plan": state.get("structured_plan") or {"_revision_marker": True}}, clean_latest_text or req.user_input)
         )
+        collector = agent_workflow.fast_collect_required_info_for_api if use_rule_collect else agent_workflow.collect_required_info_for_api
+        new_state = await loop.run_in_executor(GLOBAL_EXECUTOR, collector, state)
         info_elapsed = time.perf_counter() - info_started
-        print(f"⏱️ 工具调用耗时 [collect_required_info_for_api]: {info_elapsed:.2f}s")
+        print(f"⏱️ 工具调用耗时 [{collector.__name__}]: {info_elapsed:.2f}s")
         new_state["latest_user_input"] = req.user_input
+        if regenerate_requested:
+            new_state["force_regenerate"] = True
+            new_state["route_variant_seed"] = f"regen:{session_id}:{time.time_ns()}:{uuid.uuid4().hex[:8]}"
         new_state = update_locked_places_from_state(new_state, req.user_input)
     except Exception as e:
         return JSONResponse({"error": f"信息收集失败: {str(e)}"}, status_code=500)
 
     # ── Step 3: 信息不齐全 → 保存状态，返回追问给前端 ─────────
     if not new_state.get("info_complete"):
-        new_state = purge_transient_anchor_exclusions(new_state)
         save_session(session_id, new_state)
         log_generation_time(session_id, time.perf_counter() - request_started_at, "need_info")
         return json_event_response(session_id, {
@@ -1179,7 +1194,7 @@ async def _plan_impl(req: PlanRequest, session_id: str):
             "session_id": session_id,
             "question": new_state.get(
                 "pending_question",
-                "请补充出发地点、人数、时间和预算信息～😊"
+                "告诉我什么时候、和谁/几个人、从哪里出发、想去哪儿或在哪个区域附近逛、交通方式、人均消费和其他要求～"
             )
         }, req.client_id or "")
 
@@ -1188,38 +1203,38 @@ async def _plan_impl(req: PlanRequest, session_id: str):
         return discussion_response
 
     # ── Step 4: 信息齐全 → 执行完整规划流程 ───────────────────
-    if bool(new_state.get("force_regenerate")) or should_vary_route(new_state, req.user_input):
+    if regenerate_requested or new_state.get("force_regenerate"):
+        new_state["route_variant_seed"] = f"regen:{session_id}:{time.time_ns()}:{uuid.uuid4().hex[:8]}"
+    elif should_vary_route(new_state, req.user_input):
         new_state["route_variant_seed"] = f"{session_id}:{time.time_ns()}:{uuid.uuid4().hex[:8]}"
     else:
         new_state.pop("route_variant_seed", None)
 
     cache_key = make_plan_cache_key(new_state)
-    result = get_cached_plan(cache_key)
+    bypass_cache = bool(
+        regenerate_requested
+        or new_state.get("force_regenerate")
+        or new_state.get("adjustment_modes")
+        or int(new_state.get("revision_count") or 0) > 0
+    )
+    result = None if bypass_cache else get_cached_plan(cache_key)
     cache_hit = result is not None
     try:
         if result is None:
-            result = await loop.run_in_executor(
-                GLOBAL_EXECUTOR,
-                agent_workflow.plan_workflow.invoke,
-                new_state
-            )
-            result = attach_budget_estimate(result)
-            result = purge_transient_anchor_exclusions(result)
+            # 不再强制 30 秒截断主流程，也不再启用 fast_plan_for_api_timeout。
+            # 30 秒目标只作为性能日志；如果真实流程超过 30 秒，仍返回完整正常方案，便于定位慢节点。
+            result = await loop.run_in_executor(GLOBAL_EXECUTOR, agent_workflow.plan_workflow.invoke, new_state)
             set_cached_plan(cache_key, result)
-        else:
-            result = attach_budget_estimate(result)
-            result = purge_transient_anchor_exclusions(result)
     except Exception as e:
         return JSONResponse({"error": f"规划失败: {str(e)}"}, status_code=500)
 
     generation_seconds = time.perf_counter() - request_started_at
     log_generation_time(session_id, generation_seconds, "plan_ready", cache_hit=cache_hit)
-    result["awaiting_satisfaction"] = True
+    result["awaiting_satisfaction"] = False
+    result.pop("force_regenerate", None)
     result["revision_count"] = int(result.get("revision_count") or new_state.get("revision_count") or 0)
     result["generation_time_seconds"] = round(generation_seconds, 2)
     result["generation_time_over_limit"] = generation_seconds > PLAN_TIME_LIMIT_SECONDS
-    result.pop("force_regenerate", None)
-    result = purge_transient_anchor_exclusions(result)
     save_session(session_id, result)
 
     return json_event_response(session_id, {
@@ -1233,15 +1248,18 @@ async def _plan_impl(req: PlanRequest, session_id: str):
         "coupon_info": result.get("coupon_info", {}),
         "reservation_options": result.get("reservation_options", []),
         "route_map": public_route_map(result.get("route_map", {})),
-        "frontend_meta": build_frontend_meta(result),
         "node_timings": result.get("node_timings", {}),
         "generation_time_seconds": result.get("generation_time_seconds"),
         "generation_time_over_limit": result.get("generation_time_over_limit"),
         "cache_hit": cache_hit,
         "exception": result.get("exception"),
         "exception_events": result.get("exception_events") or ((result.get("structured_plan") or {}).get("route_logic_validation") or {}).get("exception_events") or [],
+        "availability_events": ((result.get("structured_plan") or {}).get("availability_events") or ((result.get("structured_plan") or {}).get("route_logic_validation") or {}).get("availability_events") or []),
         "adjustment_conflicts": ((result.get("structured_plan") or {}).get("route_logic_validation") or {}).get("adjustment_conflicts") or [],
-        "satisfaction_question": "你对这个方案满意吗？如果满意请回复“满意/可以/就这个”，如果不满意请直接告诉我想怎么改，我会继续调整。"
+        "crowd_tip": (result.get("structured_plan") or {}).get("crowd_tip", ""),
+        "has_reservable_places": bool((result.get("structured_plan") or {}).get("has_reservable_places")),
+        "reservation_prompt_policy": (result.get("structured_plan") or {}).get("reservation_prompt_policy", "hide"),
+        "satisfaction_question": ""
     }, req.client_id or "")
 
 

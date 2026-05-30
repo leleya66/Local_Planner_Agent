@@ -13,6 +13,7 @@ import urllib.error
 import time
 import random
 import hashlib
+import math
 from datetime import date, datetime, timedelta
 from typing import TypedDict, Optional
 from dotenv import load_dotenv
@@ -54,8 +55,10 @@ def init_models():
     retriever = vectorstore.as_retriever(
         search_type="mmr",
         search_kwargs={
-            "k": int(os.getenv("RETRIEVER_K", "8")),
-            "fetch_k": int(os.getenv("RETRIEVER_FETCH_K", "30")),
+            # 默认检索量下调：RAG 只做风格/案例参考，最终事实以结构化地点表和高德为准。
+            # 减少 chunk 数可以显著降低嵌入检索和后续字符串处理耗时；如需更强 RAG 可用环境变量调大。
+            "k": int(os.getenv("RETRIEVER_K", "4")),
+            "fetch_k": int(os.getenv("RETRIEVER_FETCH_K", "12")),
             "lambda_mult": 0.45,
         },
     )
@@ -137,6 +140,206 @@ CHINESE_NUMERAL_MAP = {
     "六": 6, "七": 7, "八": 8, "九": 9, "十": 10,
 }
 
+
+
+# ==========================================
+# 0.5 意图/空间锚点辅助函数
+# ==========================================
+NEARBY_MARKERS = ("附近", "周边", "一带", "周围", "旁边", "边上", "周遭")
+AREA_ANCHOR_TERMS = {
+    "陆家嘴", "人民广场", "徐家汇", "五角场", "静安寺", "南京西路", "南京东路",
+    "淮海路", "新天地", "外滩", "北外滩", "前滩", "虹桥", "古北", "大学路",
+    "七宝", "莘庄", "张江", "花木", "世纪公园", "中山公园", "长风公园",
+    "豫园", "打浦桥", "田子坊", "武康路", "安福路", "愚园路", "巨鹿路",
+}
+
+
+
+
+INVALID_ANCHOR_MARKERS = {
+    "保留用户明确", "保留已锁定", "用户明确的", "当前偏好", "上一版", "不同路线",
+    "重新生成", "不要重复", "非锁定地点", "目的地区域", "出发地目的地",
+}
+
+
+def is_invalid_anchor_text(value: str) -> bool:
+    """Return True when a captured anchor is actually an instruction/placeholder."""
+    text = str(value or "").strip()
+    if not text:
+        return True
+    compact = re.sub(r"\s+", "", text)
+    if any(marker in compact for marker in INVALID_ANCHOR_MARKERS):
+        return True
+    if re.search(r"(?:出发地|目的地|终点|起点).*(?:预算|人数|交通|偏好|区域)", compact):
+        return True
+    if len(compact) > 30 and not re.search(r"(?:路|街|站|店|园|馆|城|区|镇|广场|中心|天地|小镇|公园)$", compact):
+        return True
+    return False
+
+
+def clean_anchor_for_display(value: str) -> str:
+    text = clean_location_hint_candidate(value) if value else ""
+    if is_invalid_anchor_text(text):
+        return ""
+    return text.strip()
+
+def strip_anchor_quotes(value: str) -> str:
+    text = str(value or "").strip()
+    text = text.strip("\"'“”‘’《》<>（）()[]【】")
+    return text.strip()
+
+
+def strip_anchor_edit_prefix(value: str) -> str:
+    """把“出发地换为X / 目的地设为X”清洗成 X，再交给地点合法性判断。"""
+    text = strip_anchor_quotes(value)
+    text = re.sub(
+        r"^(?:把|将|请把|帮我把)?(?:出发地|起点|始发地|目的地|终点|想去的地方|要去的地方)"
+        r"(?:换成|换为|改成|改为|换到|改到|设为|设置为|为|是|在|到)",
+        "",
+        text,
+    ).strip()
+    return strip_anchor_quotes(text)
+
+
+def text_has_departure_edit_prefix(value: str) -> bool:
+    compact = re.sub(r"\s+", "", str(value or ""))
+    return bool(re.search(r"^(?:把|将|请把)?(?:出发地|起点|始发地)(?:换成|换为|改成|改为|换到|改到|设为|设置为|为|是|在|到)", compact))
+
+
+def text_has_destination_edit_prefix(value: str) -> bool:
+    compact = re.sub(r"\s+", "", str(value or ""))
+    return bool(re.search(r"^(?:把|将|请把)?(?:目的地|终点|想去的地方|要去的地方)(?:换成|换为|改成|改为|换到|改到|设为|设置为|为|是|在|到)", compact))
+
+
+def is_departure_update_only_text(text: str) -> bool:
+    """本轮只是在修改出发地时，不允许同一个地点进入 location/fixed_destination。"""
+    compact = re.sub(r"\s+", "", str(text or ""))
+    if not compact:
+        return False
+    departure_hit = bool(re.search(r"(?:从.+出发|(?:把|将|请把)?(?:出发地|起点|始发地)(?:换成|换为|改成|改为|设为|设置为|为|是|在|到))", compact))
+    destination_hit = bool(re.search(r"(?:目的地|终点|想去|要去|去玩|去逛|安排到|逛一下|玩一下)", compact))
+    return departure_hit and not destination_hit
+
+
+def is_departure_edit_value(value: str, latest_text: str = "", departure_hint: str = "") -> bool:
+    """判断某个 location/fixed_destination 值是否其实是出发地修改误写入。"""
+    raw = str(value or "").strip()
+    if not raw:
+        return False
+    if text_has_departure_edit_prefix(raw):
+        return True
+    cleaned = strip_anchor_edit_prefix(raw)
+    hint = str(departure_hint or "").strip()
+    if hint and is_departure_update_only_text(latest_text) and normalize_place_text(cleaned) == normalize_place_text(hint):
+        return True
+    return False
+
+
+def normalize_area_like_anchor(value: str) -> str:
+    text = strip_anchor_edit_prefix(value)
+    text = re.sub(r"(附近|周边|一带|周围|旁边|边上|周遭)$", "", text).strip()
+    text = re.sub(r"^(上海市?)", "", text).strip()
+    return text
+
+
+def clean_spatial_anchor_candidate(candidate: str) -> str:
+    """把“从徐汇出发想去中山公园附近/我们想在陆家嘴周边”清洗成真正锚点。
+
+    这个函数专门处理“附近/周边”语义，不能只按后缀判断；否则会把
+    “从徐汇出发想去中山公园”整段误当成锚点。
+    """
+    text = strip_anchor_edit_prefix(candidate)
+    text = re.split(r"[，。！？；;、/／\n]", text)[-1].strip()
+    text = re.sub(r"^(?:我|我们|咱们|大家|想|要|希望|打算|计划)+", "", text).strip()
+    # 若同一句里有出发地和目的地，出发地之前的内容全部丢掉，只保留“想去/在/到”之后的锚点。
+    if "出发" in text:
+        text = text.split("出发")[-1].strip()
+    markers = ["想去", "要去", "想在", "要在", "计划去", "打算去", "安排在", "安排到", "围绕", "以", "去", "在", "到", "逛", "玩"]
+    best_pos = -1
+    best_marker = ""
+    for marker in markers:
+        pos = text.rfind(marker)
+        if pos > best_pos:
+            best_pos = pos
+            best_marker = marker
+    if best_pos >= 0:
+        text = text[best_pos + len(best_marker):].strip()
+    text = re.sub(r"^(?:为中心|为锚点|附近|周边|一带|周围|旁边|边上|周遭)", "", text).strip()
+    text = re.sub(r"(?:附近|周边|一带|周围|旁边|边上|周遭)$", "", text).strip()
+    text = re.sub(r"^(上海市?)", "", text).strip()
+    text = re.sub(r"^(?:的|这边|那边)", "", text).strip()
+    return strip_anchor_quotes(text)
+
+
+def infer_anchor_query_from_text(text: str) -> str:
+    """区域/附近锚点不直接入路线，需提取“周边找什么”的查询意图。"""
+    raw = str(text or "")
+    if any(w in raw for w in ["吃饭", "餐厅", "美食", "火锅", "韩料", "小笼", "生煎", "面馆"]):
+        return "餐厅"
+    if any(w in raw for w in ["咖啡", "下午茶", "甜品", "奶茶"]):
+        return "咖啡"
+    if any(w in raw for w in ["看展", "展览", "美术馆", "博物馆"]):
+        return "展览"
+    if any(w in raw for w in ["室内", "下雨", "别晒", "避雨"]):
+        return "室内活动"
+    if any(w in raw for w in ["散步", "逛", "走走", "citywalk", "休闲", "放松"]):
+        return "休闲景点"
+    return "周边休闲活动"
+
+
+def extract_spatial_anchor_from_user_text(user_input: str) -> Optional[dict]:
+    """识别“中山公园附近/陆家嘴/浦东新区/松江区”这类空间锚点。
+
+    返回的 anchor 只用于搜索附近 POI，不直接进入最终 schedule。
+    """
+    text = str(user_input or "")
+    if not text:
+        return None
+
+    # 明确“X 附近/周边/一带”：X 必须作为空间锚点，不作为最终站点。
+    nearby_patterns = [
+        r"(?:想去|要去|去|逛|玩|安排|在|到)?\s*([^，。！？；;、/／\s]{2,30}?)(?:附近|周边|一带|周围|旁边|边上|周遭)",
+        r"(?:围绕|以)([^，。！？；;、/／\s]{2,30}?)(?:为中心|为锚点|附近|周边)",
+    ]
+    for pattern in nearby_patterns:
+        match = re.search(pattern, text)
+        if match:
+            anchor = clean_spatial_anchor_candidate(match.group(1))
+            if anchor and anchor not in GENERIC_LOCATION_TERMS and not text_has_departure_edit_prefix(anchor):
+                return {
+                    "anchor": anchor,
+                    "mode": "nearby",
+                    "query": infer_anchor_query_from_text(text),
+                    "exclude_anchor_from_schedule": True,
+                    "note": f"用户表达为“{anchor}附近/周边”，系统将它作为搜索锚点，只推荐周边具体地点，不把锚点本身硬塞进路线。",
+                }
+
+    # 行政区和典型商圈/片区：同样作为区域锚点，不直接作为最终站点。
+    candidate_terms = sorted(set(SHANGHAI_DISTRICT_TERMS) | AREA_ANCHOR_TERMS, key=len, reverse=True)
+    for term in candidate_terms:
+        if not term or term not in text:
+            continue
+        departure_context = re.search(rf"(?:从|出发地|起点|始发地)[^，。！？；;]{{0,10}}{re.escape(term)}", text)
+        destination_context = re.search(rf"(?:想去|要去|去|逛|玩|安排|目的地|终点|附近|周边|一带)[^，。！？；;]{{0,12}}{re.escape(term)}", text)
+        if departure_context and not destination_context:
+            continue
+        if term in SHANGHAI_DISTRICT_TERMS or term in AREA_ANCHOR_TERMS:
+            return {
+                "anchor": term,
+                "mode": "area",
+                "query": infer_anchor_query_from_text(text),
+                "exclude_anchor_from_schedule": True,
+                "note": f"用户输入“{term}”更像区域/商圈锚点，系统会围绕该片区生成具体小地点，而不是把“{term}”直接当作一站。",
+            }
+    return None
+
+
+def is_area_anchor_value(value: str) -> bool:
+    text = normalize_area_like_anchor(value)
+    if not text:
+        return False
+    return text in SHANGHAI_DISTRICT_TERMS or text in AREA_ANCHOR_TERMS
+
 _geocode_cache = {}
 _geocode_detail_cache = {}
 _amap_text_poi_cache = {}
@@ -144,6 +347,53 @@ _route_distance_cache = {}
 _amap_poi_cache = {}
 _last_amap_request_at = 0.0
 _amap_rate_limited_until = 0.0
+
+
+# 高德对“品牌 + 分店/园区内点位”有时会命中同名市中心分店，
+# 例如“芝乐坊餐厅（迪士尼小镇店）”被定位到南京西路附近，导致迪士尼小镇到城堡前广场显示二十多公里。
+# 这里不是替代高德，而是对已知大型园区内锚点做低风险兜底：只要名称明确包含迪士尼/小镇/城堡等语义，先使用园区坐标。
+DISNEY_COORD_OVERRIDES = [
+    ("迪士尼小镇", "121.663650,31.144360", "上海市浦东新区迪士尼小镇"),
+    ("迪士尼城堡", "121.657900,31.143500", "上海市浦东新区上海迪士尼乐园奇幻童话城堡附近"),
+    ("城堡前广场", "121.658100,31.143800", "上海市浦东新区上海迪士尼乐园城堡前广场"),
+    ("上海迪士尼度假区", "121.667850,31.144020", "上海市浦东新区上海迪士尼度假区"),
+    ("迪士尼乐园", "121.667850,31.144020", "上海市浦东新区上海迪士尼乐园"),
+    ("迪士尼", "121.667850,31.144020", "上海市浦东新区上海迪士尼度假区"),
+]
+
+
+def disney_coord_override(place_name: str) -> Optional[dict]:
+    text = str(place_name or "").strip()
+    if not text or "迪士尼" not in text:
+        return None
+    compact = normalize_place_text(text) if "normalize_place_text" in globals() else re.sub(r"\s+", "", text).lower()
+    for key, coord, address in DISNEY_COORD_OVERRIDES:
+        key_compact = normalize_place_text(key) if "normalize_place_text" in globals() else key.lower()
+        if key_compact and key_compact in compact:
+            return {"location": coord, "formatted_address": address, "poi_name": key, "source": "local_disney_coord_override"}
+    return {"location": "121.667850,31.144020", "formatted_address": "上海市浦东新区上海迪士尼度假区", "poi_name": "上海迪士尼度假区", "source": "local_disney_coord_override"}
+
+
+def is_area_anchor_schedule_self(place: str, anchor: str) -> bool:
+    """Only remove the anchor itself from nearby/area routes, not every POI containing the anchor word.
+
+    “迪士尼周围” should not render the generic anchor “迪士尼”, but it may render concrete nearby POIs
+    such as “迪士尼小镇店/城堡前广场”. 旧逻辑用 same_route_place 会把这些具体点也删掉，最后只剩“待确认地点”。
+    """
+    place_text = str(place or "").strip()
+    anchor_text = str(anchor or "").strip()
+    if not place_text or not anchor_text:
+        return False
+    if same_anchor_identity(place_text, anchor_text):
+        return True
+    # “迪士尼周围”里的泛锚点本体应排除，但“迪士尼小镇店/城堡前广场”这类具体 POI 应保留。
+    if normalize_place_text(anchor_text) == "迪士尼" and normalize_place_text(place_text) in {
+        "迪士尼", "上海迪士尼", "迪士尼乐园", "上海迪士尼乐园", "上海迪士尼度假区"
+    }:
+        return True
+    place_key = normalize_area_like_anchor(place_text)
+    anchor_key = normalize_area_like_anchor(anchor_text)
+    return bool(place_key and anchor_key and place_key == anchor_key and (is_area_anchor_value(place_key) or place_key in GENERIC_LOCATION_TERMS))
 
 AMAP_TRANSIENT_LIMIT_INFOS = {
     "CUQPS_HAS_EXCEEDED_THE_LIMIT",
@@ -161,28 +411,63 @@ def is_amap_transient_limit(info: str) -> bool:
     return str(info or "").strip() in AMAP_TRANSIENT_LIMIT_INFOS
 
 
-def amap_get_json(url: str, params: dict, timeout: int = 8) -> dict:
-    """带本地节流的高德请求，避免一次规划里连续请求过快触发 QPS 限制。"""
+def amap_backoff_remaining() -> float:
+    """Seconds until the local Amap backoff window ends.
+
+    Older code returned LOCAL_RATE_LIMIT_BACKOFF immediately during this window.
+    That made one transient QPS response poison all following geocode/distance calls in
+    the same planning run, so the same POI was logged as failed repeatedly.
+    """
+    return max(0.0, float(_amap_rate_limited_until or 0.0) - time.time())
+
+
+def amap_get_json(url: str, params: dict, timeout: int = 2) -> dict:
+    """带本地节流和轻量重试的高德请求。
+
+    修复点：
+    - 不再在本地 backoff 期间直接返回 LOCAL_RATE_LIMIT_BACKOFF；可等待的短 backoff 会先等待。
+    - 默认请求间隔从 0.05s 调到 0.35s，避免一次规划内 geocode / poi / direction 连续请求触发高德 QPS。
+    - 瞬时 QPS 错误最多重试 1 次；失败后不把瞬时失败写入永久缓存。
+    - AMAP_REQUEST_TIMEOUT_SECONDS 现在可以把默认 timeout 调大，而不是被 min() 永远压回 2 秒。
+    """
     global _last_amap_request_at, _amap_rate_limited_until
 
-    now = time.time()
-    if now < _amap_rate_limited_until:
-        return {"status": "0", "info": "LOCAL_RATE_LIMIT_BACKOFF"}
+    min_interval = float(os.getenv("AMAP_REQUEST_INTERVAL_SECONDS", "0.35"))
+    max_retries = max(0, int(os.getenv("AMAP_MAX_RETRIES", "1")))
+    backoff_seconds = float(os.getenv("AMAP_QPS_BACKOFF_SECONDS", "1.2"))
+    max_backoff_wait = float(os.getenv("AMAP_MAX_BACKOFF_WAIT_SECONDS", "2.0"))
+    configured_timeout = os.getenv("AMAP_REQUEST_TIMEOUT_SECONDS")
+    if configured_timeout:
+        try:
+            timeout = max(1, min(float(configured_timeout), 8.0))
+        except ValueError:
+            timeout = max(1, timeout)
 
-    min_interval = float(os.getenv("AMAP_REQUEST_INTERVAL_SECONDS", "0.25"))
-    elapsed = now - _last_amap_request_at
-    if elapsed < min_interval:
-        time.sleep(min_interval - elapsed)
+    last_data = {"status": "0", "info": "LOCAL_RATE_LIMIT_BACKOFF"}
+    for attempt in range(max_retries + 1):
+        remaining = amap_backoff_remaining()
+        if remaining > 0:
+            # 等短暂 backoff，而不是直接失败；过长 backoff 只等上限，避免拖垮整轮规划。
+            time.sleep(min(remaining, max_backoff_wait))
 
-    query = urllib.parse.urlencode(params, safe=",|")
-    with urllib.request.urlopen(f"{url}?{query}", timeout=timeout) as response:
-        _last_amap_request_at = time.time()
-        data = json.loads(response.read().decode("utf-8"))
+        elapsed = time.time() - _last_amap_request_at
+        if elapsed < min_interval:
+            time.sleep(min_interval - elapsed)
 
-    if is_amap_transient_limit(data.get("info")):
-        backoff_seconds = float(os.getenv("AMAP_QPS_BACKOFF_SECONDS", "8"))
+        query = urllib.parse.urlencode(params, safe=",|")
+        with urllib.request.urlopen(f"{url}?{query}", timeout=timeout) as response:
+            _last_amap_request_at = time.time()
+            data = json.loads(response.read().decode("utf-8"))
+
+        last_data = data
+        if not is_amap_transient_limit(data.get("info")):
+            return data
+
         _amap_rate_limited_until = time.time() + backoff_seconds
-    return data
+        if attempt < max_retries:
+            time.sleep(min(backoff_seconds, max_backoff_wait))
+
+    return last_data
 
 
 # --获取天气信息
@@ -401,6 +686,10 @@ def amap_geocode(address: str, city: str = "上海") -> Optional[str]:
     if not key:
         return None
 
+    override = disney_coord_override(address)
+    if override and override.get("location"):
+        return str(override.get("location"))
+
     area_like = is_shanghai_area_location(address)
     normalized = normalize_area_anchor(address) if area_like else normalize_shanghai_address(address)
     if not normalized:
@@ -415,6 +704,7 @@ def amap_geocode(address: str, city: str = "上海") -> Optional[str]:
         if row is not None:
             saved_coord = str(row.get("amap_location", "") or "").strip()
             if re.match(r"^-?\d+(\.\d+)?,-?\d+(\.\d+)?$", saved_coord):
+                _geocode_cache[cache_key] = saved_coord
                 return saved_coord
     except Exception:
         pass
@@ -423,6 +713,18 @@ def amap_geocode(address: str, city: str = "上海") -> Optional[str]:
     if poi and poi.get("location"):
         coord = str(poi.get("location") or "").strip()
         _geocode_cache[cache_key] = coord
+        if poi.get("formatted_address"):
+            _geocode_detail_cache[(normalized, city)] = {
+                "formatted_address": poi.get("formatted_address", ""),
+                "province": poi.get("province", ""),
+                "city": poi.get("city", ""),
+                "district": poi.get("district", ""),
+                "location": coord,
+                "level": "POI",
+                "poi_name": poi.get("name", ""),
+                "poi_type": poi.get("type", ""),
+                "source": "amap_place_text",
+            }
         return coord
 
     try:
@@ -548,6 +850,11 @@ def choose_best_poi_for_place(place_name: str, pois: list[dict]) -> Optional[dic
     if not key or not pois:
         return None
     scored = []
+    raw_place = str(place_name or "")
+    branch_tokens = [
+        token for token in re.split(r"[（）()·•\s\-_/【】\[\]《》,，、]+", raw_place)
+        if token and len(normalize_place_text(token)) >= 2
+    ]
     for poi in pois:
         poi_name = str(poi.get("name") or "")
         poi_key = normalize_place_text(poi_name)
@@ -560,6 +867,17 @@ def choose_best_poi_for_place(place_name: str, pois: list[dict]) -> Optional[dic
         if tokens and all(token in poi_key for token in tokens[:2]):
             score += 40
         address = str(poi.get("formatted_address") or "")
+        poi_full_text = f"{poi_name} {address} {poi.get('district','')} {poi.get('type','')}"
+        poi_full_key = normalize_place_text(poi_full_text)
+        for token in branch_tokens:
+            tk = normalize_place_text(token)
+            if tk and tk in poi_full_key:
+                score += 30
+        if "迪士尼" in raw_place:
+            if "迪士尼" in poi_full_text or "川沙" in poi_full_text or "浦东" in poi_full_text:
+                score += 120
+            if any(bad in poi_full_text for bad in ["南京西路", "静安", "太古汇", "人民广场", "淮海"]):
+                score -= 180
         if address and any(token in address for token in ["路", "街", "号", "弄", "广场", "中心", "店"]):
             score += 10
         scored.append((score, poi))
@@ -573,17 +891,32 @@ def amap_geocode_detail(address: str, city: str = "上海") -> dict:
     if not key or not address:
         return {}
 
+    override = disney_coord_override(address)
+    if override and override.get("location"):
+        return {
+            "formatted_address": override.get("formatted_address", ""),
+            "location": override.get("location", ""),
+            "poi_name": override.get("poi_name", ""),
+            "level": "POI",
+            "source": override.get("source", "local_override"),
+        }
+
     try:
         row = _find_place(address)
         if row is not None:
             saved_address = clean_amap_address_part(row.get("amap_address", ""))
             saved_coord = clean_amap_address_part(row.get("amap_location", ""))
             if saved_address:
-                return {
+                detail = {
                     "formatted_address": normalize_shanghai_address(saved_address),
                     "location": saved_coord,
                     "source": "mock_table",
                 }
+                normalized_for_cache = normalize_shanghai_address(address)
+                _geocode_detail_cache[(normalized_for_cache, city)] = detail
+                if saved_coord:
+                    _geocode_cache[(normalized_for_cache, city)] = saved_coord
+                return detail
     except Exception:
         pass
 
@@ -606,6 +939,8 @@ def amap_geocode_detail(address: str, city: str = "上海") -> dict:
             "source": "amap_place_text",
         }
         _geocode_detail_cache[cache_key] = detail
+        if detail.get("location"):
+            _geocode_cache[cache_key] = detail.get("location")
         return detail
 
     try:
@@ -641,6 +976,8 @@ def amap_geocode_detail(address: str, city: str = "上海") -> dict:
         "source": "amap_geocode",
     }
     _geocode_detail_cache[cache_key] = detail
+    if detail.get("location"):
+        _geocode_cache[cache_key] = detail.get("location")
     return detail
 
 
@@ -715,6 +1052,20 @@ def reset_schedule_place_fields(item: dict) -> dict:
     copied = dict(item or {})
     for field in PLACE_SPECIFIC_SCHEDULE_FIELDS:
         copied.pop(field, None)
+    return copied
+
+
+def set_schedule_place(item: dict, place: str) -> dict:
+    """Update a schedule item to a new place without carrying stale display data."""
+    copied = reset_schedule_place_fields(item)
+    copied["place"] = place
+    role = place_role(place)
+    copied["place_role"] = role
+    copied["purpose"] = (
+        "正餐/核心用餐" if role == "meal"
+        else "轻量补充/咖啡休息" if role == "light_food"
+        else "顺路游玩/散步体验"
+    )
     return copied
 
 
@@ -869,37 +1220,14 @@ def is_category_like_location(location: str) -> bool:
     return bool(text) and any(term in text for term in soft_preference_terms) and not is_shanghai_area_location(location)
 
 
-def looks_like_anchor_edit_instruction(value: str) -> bool:
-    """Return True when a value is an instruction sentence rather than a place name.
-
-    典型坏例：LLM 把“出发地换为松江大学城”整句抽进 location，
-    后续又因为“大学城”是强地点后缀而误存为 fixed_destination。
-    """
-    text = str(value or "").strip()
-    if not text:
-        return False
-    compact = re.sub(r"\s+", "", text)
-    return bool(re.search(
-        r"^(?:把|将)?(?:出发地|起点|始发地|目的地|终点|想去的地方|要去的地方)(?:换成|换为|改成|改为|换到|改到|设为|设置为|为|是|在|到)",
-        compact,
-    ))
-
-
 def is_concrete_location_anchor(location: str) -> bool:
     """Return True when a location can be treated as a route anchor instead of only a preference."""
     text = str(location or "").strip()
-    if not text:
+    if not text or is_invalid_anchor_text(text):
         return False
-    # 任何仍带“出发地/目的地/起点/终点 + 换为/改成”等指令壳的值，都不是地点锚点。
-    # 这里不做特例判断，临港大学城/松江大学城等所有强后缀地点都走同一套清洗逻辑。
-    if looks_like_anchor_edit_instruction(text):
+    cleaned = clean_location_hint_candidate(text)
+    if not cleaned or is_invalid_anchor_text(cleaned):
         return False
-    try:
-        if text_has_departure_edit_prefix(text) or text_has_destination_edit_prefix(text):
-            return False
-        cleaned = clean_location_hint_candidate(text)
-    except NameError:
-        cleaned = text
     return cleaned not in GENERIC_LOCATION_TERMS and not is_category_like_location(cleaned)
 
 
@@ -1259,6 +1587,80 @@ def extract_meal_candidates(route_plan_text: str) -> list:
     return [name.strip() for name in names if name.strip()]
 
 
+def choose_nearest_place(anchor_name: str, candidate_names: list) -> Optional[dict]:
+    """从候选地点中选距离 anchor 最近的一个。无高德 Key 或查询失败时返回 None。"""
+    anchor_coord = amap_geocode(anchor_name)
+    if not anchor_coord:
+        return None
+
+    best = None
+    max_candidates = _safe_int(os.getenv("AMAP_MAX_MEAL_CANDIDATES", "2"), 2)
+    for name in candidate_names[:max_candidates]:
+        coord = amap_geocode(name)
+        if not coord:
+            continue
+        route = amap_driving_distance(anchor_coord, coord)
+        if not route:
+            continue
+        item = {
+            "name": name,
+            "coord": coord,
+            "distance_m": route["distance_m"],
+            "duration_s": route["duration_s"],
+        }
+        if best is None or item["distance_m"] < best["distance_m"]:
+            best = item
+    return best
+
+
+def build_route_distance_info(departure: str, main_location: str, route_plan_text: str) -> str:
+    """生成 出发地 -> 主地点 -> 最近用餐点 的高德距离说明。"""
+    if not get_amap_key():
+        return "未配置 AMAP_API_KEY 或 GAODE_API_KEY，当前无法调用高德地图计算真实转场距离；禁止在方案中输出任何具体距离、分钟数或费用估算，只能提示用户配置 Key 后再计算。"
+
+    stops = [str(departure or "").strip(), str(main_location or "").strip()]
+    meal_candidates = extract_meal_candidates(route_plan_text)
+    nearest_meal = choose_nearest_place(main_location, meal_candidates) if meal_candidates else None
+    if nearest_meal:
+        stops.append(nearest_meal["name"])
+
+    stops = [stop for stop in stops if stop]
+    if len(stops) < 2:
+        return "高德距离计算失败：缺少出发地或目标地点。"
+
+    lines = ["高德真实距离参考（驾车距离优先；短距离可按建议改步行/骑行）："]
+    total_m = 0
+    failed = []
+    for idx in range(len(stops) - 1):
+        start, end = stops[idx], stops[idx + 1]
+        start_coord = amap_geocode(start)
+        end_coord = amap_geocode(end)
+        if not start_coord or not end_coord:
+            failed.append(f"{start} -> {end} 地理编码失败")
+            continue
+        route = amap_driving_distance(start_coord, end_coord)
+        if not route:
+            failed.append(f"{start} -> {end} 路径规划失败")
+            continue
+        total_m += route["distance_m"]
+        lines.append(
+            f"{idx + 1}. {start} -> {end}: "
+            f"{format_distance(route['distance_m'])}，约{format_duration(route['duration_s'])}，"
+            f"建议：{suggest_transport(route['distance_m'])}"
+        )
+
+    if nearest_meal:
+        lines.append(
+            f"用餐点已按距离从候选中优先选择：{nearest_meal['name']} "
+            f"（距 {main_location} {format_distance(nearest_meal['distance_m'])}）。"
+        )
+    if total_m:
+        lines.append(f"当前核心转场合计约 {format_distance(total_m)}。")
+    if failed:
+        lines.append("未成功计算：" + "；".join(failed))
+    return "\n".join(lines)
+
+
 def rebuild_schedule_with_places(old_schedule: list[dict], places: list[str]) -> list[dict]:
     """距离修复后按新地点列表重建 schedule，保留原时间槽。"""
     if not places:
@@ -1300,6 +1702,11 @@ def attach_route_segments_to_structured_plan(structured_plan: dict, segments: li
     return structured_plan
 
 
+def repair_structured_plan_distance_violations(state: AgentState) -> tuple[dict, list[str]]:
+    """Backward-compatible no-op: distance is now reference-only, not a hard repair step."""
+    return state.get("structured_plan") or {}, []
+
+
 def compute_route_segments(departure: str, stops: list[str]) -> tuple[str, list[dict], list[str]]:
     """返回 route_distance_info 文本和可写入 structured_plan.schedule 的分段交通数据。"""
     if not get_amap_key():
@@ -1318,7 +1725,15 @@ def compute_route_segments(departure: str, stops: list[str]) -> tuple[str, list[
     total_m = 0
     failed = []
     segments = []
-    for idx in range(len(route_stops) - 1):
+    started_at = time.time()
+    # 这里不是强制 30 秒兜底，只是限制高德距离子流程自身不要无限重试。
+    # 默认计算“出发地->第一站”和后续最多 3 段，覆盖常见 3-4 站半日路线。
+    max_wall = float(os.getenv("AMAP_DISTANCE_WALL_LIMIT_SECONDS", "8"))
+    max_segments = int(os.getenv("AMAP_DISTANCE_MAX_SEGMENTS", "4"))
+    for idx in range(min(len(route_stops) - 1, max_segments)):
+        if time.time() - started_at > max_wall:
+            failed.append("高德距离计算超过本轮时间上限，已停止剩余路段，避免方案生成超时")
+            break
         start, end = route_stops[idx], route_stops[idx + 1]
         start_coord = amap_geocode(start)
         end_coord = amap_geocode(end)
@@ -1357,6 +1772,105 @@ def compute_route_segments(departure: str, stops: list[str]) -> tuple[str, list[
     return "\n".join(lines), segments, failed
 
 
+def overlong_route_segments(segments: list[dict], max_m: Optional[int] = None) -> list[dict]:
+    """Backward-compatible no-op: no fixed-kilometer overlong route blocking is applied."""
+    return []
+
+
+def schedule_index_for_place(schedule: list[dict], place_name: str) -> Optional[int]:
+    target = normalize_place_text(place_name)
+    if not target:
+        return None
+    for index, item in enumerate(schedule or []):
+        if not isinstance(item, dict):
+            continue
+        place = str(item.get("place") or "")
+        if normalize_place_text(place) == target or same_route_place(place, place_name):
+            return index
+    return None
+
+
+def bridge_replacement_between(
+        previous_anchor: str,
+        next_anchor: str,
+        original_place: str,
+        intent: dict,
+        max_m: int,
+        force_indoor: bool = False,
+        force_coupon: bool = False,
+        exclude_places: Optional[set] = None,
+) -> Optional[str]:
+    """Find one replacement that is within max_m from both adjacent anchors."""
+    if not previous_anchor or not next_anchor:
+        return None
+    exclude_keys = {normalize_place_text(p) for p in (exclude_places or set())}
+    wanted_role = place_role(original_place)
+    candidates = []
+
+    for _, row in _df.iterrows():
+        name = str(row.get("placeName", "") or "").strip()
+        if not name:
+            continue
+        key = normalize_place_text(name)
+        if not key or key in exclude_keys:
+            continue
+        if same_route_place(name, previous_anchor) or same_route_place(name, next_anchor):
+            continue
+        role = place_role(name)
+        if wanted_role in {"meal", "light_food"} and role != wanted_role:
+            continue
+        if force_coupon and not bool(row.get("是否有团购", False)):
+            continue
+        d1 = route_distance_between_places(previous_anchor, name)
+        if d1 is None or d1 > max_m:
+            continue
+        d2 = route_distance_between_places(name, next_anchor)
+        if d2 is None or d2 > max_m:
+            continue
+        candidates.append((d1 + d2, name))
+
+    if candidates:
+        candidates.sort(key=lambda item: item[0])
+        return candidates[0][1]
+
+    spec = amap_search_spec_for_replacement(original_place, intent, force_indoor=force_indoor)
+    pois = amap_search_pois_near(
+        departure=next_anchor,
+        keyword=spec["keyword"],
+        radius=max(1000, max_m),
+        limit=_safe_int(os.getenv("AMAP_POI_LIMIT", "5"), 5),
+    )
+    for poi in pois:
+        name = str(poi.get("name") or "").strip()
+        if not name or normalize_place_text(name) in exclude_keys:
+            continue
+        d1 = route_distance_between_places(previous_anchor, name)
+        d2 = route_distance_between_places(name, next_anchor)
+        if d1 is None or d2 is None or d1 > max_m or d2 > max_m:
+            continue
+        try:
+            return persist_amap_poi_with_mock(poi, spec, force_coupon=force_coupon)
+        except Exception as e:
+            print(f"⚠️ 高德桥接候选入库失败: {name} / {e}")
+            return name
+    return None
+
+
+def enforce_route_segments_after_amap(
+        state: AgentState,
+        structured_plan: dict,
+        departure: str,
+) -> tuple[dict, list[str], str, list[dict], list[str]]:
+    """Backward-compatible no-op: distance is reference-only; no segment repair is applied."""
+    stops = [
+        item.get("place")
+        for item in (structured_plan.get("schedule") or [])
+        if isinstance(item, dict) and item.get("place") and item.get("place") != "待确认地点"
+    ]
+    route_distance_info, route_segments, failed_segments = compute_route_segments(departure, stops) if stops else ("", [], [])
+    return structured_plan, [], route_distance_info, route_segments, failed_segments
+
+
 def parse_lnglat(location: str) -> Optional[tuple[float, float]]:
     match = re.match(r"^\s*(-?\d+(?:\.\d+)?)\s*,\s*(-?\d+(?:\.\d+)?)\s*$", str(location or ""))
     if not match:
@@ -1364,29 +1878,52 @@ def parse_lnglat(location: str) -> Optional[tuple[float, float]]:
     return float(match.group(1)), float(match.group(2))
 
 
-def estimate_static_map_zoom(coords: list[tuple[float, float]]) -> int:
+def _parse_static_map_size(size: str) -> tuple[int, int]:
+    match = re.match(r"^(\d{2,4})\*(\d{2,4})$", str(size or ""))
+    if not match:
+        return 1024, 640
+    return int(match.group(1)), int(match.group(2))
+
+
+def _lat_to_mercator_y(lat: float) -> float:
+    # Web mercator normalized y in radians. Clamp avoids infinite values.
+    lat = max(-85.0, min(85.0, float(lat)))
+    rad = lat * 3.141592653589793 / 180.0
+    return math.log(math.tan(3.141592653589793 / 4.0 + rad / 2.0))
+
+
+def estimate_static_map_zoom(coords: list[tuple[float, float]], size: str = "1024*640") -> int:
+    """Pick a conservative static-map zoom so every stop remains visible.
+
+    Earlier logic used a rough degree-span table. When two stops were far apart,
+    the map could crop one marker. This version computes the zoom from the
+    longitude/mercator-latitude bounding box plus padding, then chooses the
+    highest zoom that still fits inside the static image.
+    """
     if len(coords) < 2:
         return 16
-    lngs = [c[0] for c in coords]
-    lats = [c[1] for c in coords]
-    span = max(max(lngs) - min(lngs), max(lats) - min(lats))
-    if span <= 0.006:
-        return 17
-    if span <= 0.015:
-        return 16
-    if span <= 0.035:
-        return 15
-    if span <= 0.07:
-        return 14
-    if span <= 0.15:
-        return 13
-    if span <= 0.30:
-        return 12
-    if span <= 0.60:
-        return 10
-    if span <= 1.20:
-        return 9
-    return 8
+
+    width_px, height_px = _parse_static_map_size(size)
+    usable_w = max(240, width_px * 0.72)
+    usable_h = max(180, height_px * 0.72)
+    padding = float(os.getenv("ROUTE_MAP_BBOX_PADDING", "1.45"))
+
+    lngs = [float(c[0]) for c in coords]
+    lats = [float(c[1]) for c in coords]
+    lng_span = max(max(lngs) - min(lngs), 0.00008)
+    mercs = [_lat_to_mercator_y(lat) for lat in lats]
+    merc_span = max(max(mercs) - min(mercs), 0.00008)
+
+    # Try from detailed to broad. Amap static map uses the same Web-Mercator
+    # zoom intuition as most tiled maps, so this fit test is stable enough for
+    # Shanghai city/near-suburb routes.
+    for zoom in range(17, 4, -1):
+        world_px = 256 * (2 ** zoom)
+        x_px = (lng_span / 360.0) * world_px * padding
+        y_px = (merc_span / (2 * 3.141592653589793)) * world_px * padding
+        if x_px <= usable_w and y_px <= usable_h:
+            return zoom
+    return 5
 
 
 def estimate_route_span_km(coords: list[tuple[float, float]]) -> float:
@@ -1406,10 +1943,18 @@ def estimate_static_map_size(coords: list[tuple[float, float]]) -> str:
         return explicit
     span_km = estimate_route_span_km(coords)
     if span_km <= 3:
-        return "900*520"
+        return "900*560"
     if span_km <= 10:
-        return "960*560"
+        return "960*600"
     return "1024*640"
+
+
+def short_static_map_label(index: int, place: str) -> str:
+    """Keep marker text compact so distant routes still show every stop label."""
+    cleaned = re.sub(r"\s+", "", str(place or "地点"))
+    for token in ["上海市", "上海", "旗舰店", "总店", "门店"]:
+        cleaned = cleaned.replace(token, "")
+    return f"{index}-{cleaned[:6]}"
 
 
 def build_route_map_info(structured_plan: dict) -> dict:
@@ -1439,15 +1984,16 @@ def build_route_map_info(structured_plan: dict) -> dict:
     if len(markers) < 2:
         return {"available": False, "reason": "结构化方案中可定位地点少于2个，暂不生成路线地图。", "markers": markers}
 
-    center_lng = sum(c[0] for c in coords) / len(coords)
-    center_lat = sum(c[1] for c in coords) / len(coords)
+    # Use bounding-box center instead of average center, otherwise one far stop can be cropped.
+    center_lng = (min(c[0] for c in coords) + max(c[0] for c in coords)) / 2
+    center_lat = (min(c[1] for c in coords) + max(c[1] for c in coords)) / 2
     marker_param = "|".join(
         f"large,0x1E63FF,{m['index']}:{m['coord']}"
         for m in markers
     )
     path_param = "7,0xD946EF,0.82,,:{}".format(";".join(m["coord"] for m in markers))
-    zoom = estimate_static_map_zoom(coords)
     size = estimate_static_map_size(coords)
+    zoom = estimate_static_map_zoom(coords, size=size)
     span_km = estimate_route_span_km(coords)
     params = {
         "key": get_amap_key(),
@@ -1467,7 +2013,8 @@ def build_route_map_info(structured_plan: dict) -> dict:
         "zoom": zoom,
         "size": size,
         "span_km": round(span_km, 2),
-        "note": "高德静态地图按 structured_plan.schedule 的地点顺序生成，编号1/2/3表示游玩顺序；紫色路线线段表示转场顺序。",
+        "fit_strategy": "bbox_conservative_zoom",
+        "note": "高德静态地图按 structured_plan.schedule 的地点顺序生成；地图使用保守 bbox 缩放，优先保证每个站点编号都在画面内。",
     }
 
 
@@ -1585,6 +2132,12 @@ def find_place_exact_for_route(name: str):
         if place_key and place_key == raw_key:
             return row
     return None
+
+
+def build_coupon_info(main_location: str, route_plan_text: str) -> dict:
+    """从当前路线涉及的地点里读取团购券信息，返回前端可渲染的数据。"""
+    names = unique_preserve_order([main_location] + extract_meal_candidates(route_plan_text))
+    return build_coupon_info_for_places(names)
 
 
 def build_coupon_info_for_places(names: list[str]) -> dict:
@@ -1761,6 +2314,50 @@ def same_food_brand(a: str, b: str) -> bool:
     return any(term in str(a) and term in str(b) for term in brand_terms)
 
 
+
+
+def is_food_place_role(role: str) -> bool:
+    return role in {"meal", "light_food"}
+
+
+
+
+
+def route_place_category(place_name: str) -> str:
+    """A stable category for adjacent duplicate-type guards."""
+    name = str(place_name or "")
+    row = _find_place(place_name)
+    sub_type = str(row.get("sub_type", "") or "").strip() if row is not None else ""
+    place_type = str(row.get("地点类型", "") or "").strip() if row is not None else ""
+    if any(k in name for k in ["KTV", "ktv", "唱歌", "卡拉OK", "麦乐迪", "纯K", "好乐迪"]):
+        return "ktv"
+    if any(k in name for k in ["影院", "影城", "电影"]):
+        return "cinema"
+    if any(k in name for k in ["公园", "森林", "郊野", "草坪", "湿地"]):
+        return "park"
+    if any(k in name for k in ["博物馆", "美术馆", "展览", "艺术馆", "画廊"]):
+        return "museum_exhibition"
+    if any(k in name for k in ["商场", "百联", "万达", "合生汇", "环球港"]):
+        return "shopping"
+    role = place_role(place_name)
+    if role in {"meal", "light_food"}:
+        return role
+    if sub_type and not sub_type.startswith("general"):
+        return sub_type
+    return place_type or "unknown"
+
+
+def adjacent_same_type_conflict(candidate: str, previous: str) -> Optional[str]:
+    if not candidate or not previous:
+        return None
+    c1, c2 = route_place_category(candidate), route_place_category(previous)
+    if not c1 or c1 == "unknown" or c2 == "unknown" or c1 != c2:
+        return None
+    if c1 in {"meal", "light_food"}:
+        return None
+    return f"避免连续安排同一类型地点（{c1}）：{previous} → {candidate}"
+
+
 def route_has_meal(places: list[str]) -> bool:
     return any(place_role(place) == "meal" for place in (places or []))
 
@@ -1818,9 +2415,11 @@ def append_food_safe_route_places(base: list[str], additions: list[str], state: 
         if any(same_route_place(place, old) or same_route_place(old, place) for old in result):
             continue
         reason = candidate_food_conflict(place, result)
-        if reason and not (state is not None and is_locked_route_place(place, state, intent)):
+        type_reason = adjacent_same_type_conflict(place, result[-1]) if result else None
+        locked = state is not None and is_locked_route_place(place, state, intent)
+        if (reason or type_reason) and not locked:
             if notes is not None:
-                notes.append(f"已跳过“{place}”：{reason}。")
+                notes.append(f"已跳过“{place}”：{reason or type_reason}。")
             continue
         result.append(place)
         if limit and len(result) >= limit:
@@ -1840,11 +2439,17 @@ def final_sanitize_route_places(places: list[str], state: AgentState, intent: di
     for place in unique_preserve_order([p for p in (places or []) if p and p != "待确认地点"]):
         locked = is_locked_route_place(place, state, intent)
         reason = candidate_food_conflict(place, result)
+        type_reason = adjacent_same_type_conflict(place, result[-1]) if result else None
         if reason and not locked:
             notes.append(f"最终餐饮节奏校验：已移除“{place}”，{reason}。")
             continue
+        if type_reason and not locked:
+            notes.append(f"最终类型节奏校验：已移除“{place}”，{type_reason}。")
+            continue
         if reason and locked:
             notes.append(f"餐饮节奏提示：用户锁定地点“{place}”与前一餐饮点存在冲突，系统保留该锚点并优先调整其他地点。")
+        if type_reason and locked:
+            notes.append(f"类型节奏提示：用户锁定地点“{place}”与前一站类型相同，系统保留该锚点并优先调整其他地点。")
         result.append(place)
 
     result = preserve_route_anchors(result, state, intent)
@@ -1887,12 +2492,34 @@ def route_stop_bounds(state: AgentState, intent: dict, collected: dict) -> tuple
         (intent or {}).get("duration_hours") or (collected or {}).get("duration_hours") or 5,
         5,
     )
+    pace = str((intent or {}).get("pace") or (collected or {}).get("pace") or "Balanced")
+    if pace == "Relaxed":
+        min_stops = min(min_stops, 2)
+        max_stops = min(max_stops, 3)
+    elif pace == "Packed":
+        min_stops = max(min_stops, 3)
+        max_stops = max(max_stops, 4)
     if duration <= 4:
         max_stops = min(max_stops, 3)
 
     min_stops = max(2, min(min_stops, max_stops))
     max_stops = max(min_stops, max_stops)
     return min_stops, max_stops
+
+
+def append_unique_route_places(base: list[str], additions: list[str], limit: Optional[int] = None) -> list[str]:
+    """Append non-empty, non-duplicate places while preserving route order."""
+    result = unique_preserve_order([p for p in base if p])
+    for place in additions or []:
+        place = str(place or "").strip()
+        if not place:
+            continue
+        if any(same_route_place(place, old) or same_route_place(old, place) for old in result):
+            continue
+        result.append(place)
+        if limit and len(result) >= limit:
+            break
+    return result
 
 
 def row_seat_count(row) -> int:
@@ -1937,62 +2564,69 @@ def place_price_detail(place_name: str) -> dict:
     return {"price_min": low, "price_max": high, "price_text": text}
 
 
-def estimate_schedule_budget(schedule: list[dict], num_people, requested_budget: str = "") -> dict:
-    """Estimate concrete budget from final schedule prices, per version.
 
-    This is deliberately computed after route replacement/sanitization so the UI
-    budget follows the actual generated route rather than a stale user constraint.
-    """
+
+
+def estimate_schedule_budget(schedule: list[dict], num_people, requested_budget: str = "") -> dict:
+    """Compute route-based budget after final schedule is known."""
     people = parse_people_count(num_people, None) or 1
-    per_min = 0.0
-    per_max = 0.0
+    per_min = per_max = 0.0
     unknown_count = 0
+    food_min = food_max = ticket_min = ticket_max = cafe_min = cafe_max = 0.0
     for item in schedule or []:
         if not isinstance(item, dict):
             continue
-        text = str(item.get("price_text") or "")
         low = float(item.get("price_min") or 0)
         high = float(item.get("price_max") or low or 0)
-        if "待核验" in text and low <= 0 and high <= 0:
+        if low <= 0 and high <= 0 and "待核验" in str(item.get("price_text") or ""):
             unknown_count += 1
             continue
-        per_min += max(0.0, low)
-        per_max += max(0.0, high if high >= low else low)
+        high = max(high, low)
+        per_min += max(0.0, low); per_max += max(0.0, high)
+        role = item.get("place_role") or place_role(str(item.get("place") or ""))
+        if role == "meal":
+            food_min += low; food_max += high
+        elif role == "light_food":
+            cafe_min += low; cafe_max += high
+        else:
+            ticket_min += low; ticket_max += high
     if per_min <= 0 and per_max <= 0 and unknown_count:
         text = "预算待核验"
     elif int(round(per_min)) == int(round(per_max)):
         text = f"预计人均约{int(round(per_max))}元，总计约{int(round(per_max * people))}元（{people}人）"
     else:
-        text = (
-            f"预计人均约{int(round(per_min))}-{int(round(per_max))}元，"
-            f"总计约{int(round(per_min * people))}-{int(round(per_max * people))}元（{people}人）"
-        )
+        text = f"预计人均约{int(round(per_min))}-{int(round(per_max))}元，总计约{int(round(per_min * people))}-{int(round(per_max * people))}元（{people}人）"
     if unknown_count and text != "预算待核验":
         text += f"；另有{unknown_count}个地点价格待核验"
     return {
-        "per_person_min": int(round(per_min)),
-        "per_person_max": int(round(per_max)),
-        "total_min": int(round(per_min * people)),
-        "total_max": int(round(per_max * people)),
-        "unknown_count": unknown_count,
-        "num_people": people,
-        "text": text,
+        "per_person_min": int(round(per_min)), "per_person_max": int(round(per_max)),
+        "total_min": int(round(per_min * people)), "total_max": int(round(per_max * people)),
+        "num_people": people, "unknown_count": unknown_count, "text": text,
         "requested_budget": requested_budget or "",
+        "breakdown": {
+            "tickets_activities_min": int(round(ticket_min)), "tickets_activities_max": int(round(ticket_max)),
+            "lunch_food_min": int(round(food_min)), "lunch_food_max": int(round(food_max)),
+            "cafe_snacks_min": int(round(cafe_min)), "cafe_snacks_max": int(round(cafe_max)),
+        }
     }
 
 
 def replaced_destination_key_set(state: AgentState) -> set:
-    """Keys of stale anchors to exclude for the current planning run only.
+    """Keys of old destination anchors that must not be carried into a new plan.
 
-    We no longer persist replaced_destination_keys/replaced_destinations in session.
-    When a user changes start/destination, app_api may pass exclude_anchor_*_once
-    transiently so old anchors can be filtered during this single workflow call.
+    多轮修改目的地时，旧目的地可能已经进入 locked_places、route_plan 草稿
+    或历史 user_input。这里统一记录要排除的旧目的地，避免“陆家嘴→迪士尼→
+    上海动物园”时旧目的地继续混入方案。
     """
     collected = (state or {}).get("collected_info") or {}
     raw_keys = []
+    raw_keys.extend((state or {}).get("replaced_destination_keys") or [])
+    raw_keys.extend(collected.get("replaced_destination_keys") or [])
     raw_keys.extend((state or {}).get("exclude_anchor_keys_once") or [])
     raw_keys.extend(collected.get("exclude_anchor_keys_once") or [])
     raw_names = []
+    raw_names.extend((state or {}).get("replaced_destinations") or [])
+    raw_names.extend(collected.get("replaced_destinations") or [])
     raw_names.extend((state or {}).get("exclude_anchor_names_once") or [])
     raw_names.extend(collected.get("exclude_anchor_names_once") or [])
     for name in raw_names:
@@ -2000,6 +2634,7 @@ def replaced_destination_key_set(state: AgentState) -> set:
         if key:
             raw_keys.append(key)
     return {str(k).strip() for k in raw_keys if str(k).strip()}
+
 
 def is_replaced_destination_place(place: str, state: AgentState, current_anchor: str = "") -> bool:
     """Return True when a place is an old destination anchor that must be removed.
@@ -2018,8 +2653,8 @@ def is_replaced_destination_place(place: str, state: AgentState, current_anchor:
         return True
     collected = (state or {}).get("collected_info") or {}
     replaced_names = []
-    replaced_names.extend((state or {}).get("exclude_anchor_names_once") or [])
-    replaced_names.extend(collected.get("exclude_anchor_names_once") or [])
+    replaced_names.extend((state or {}).get("replaced_destinations") or [])
+    replaced_names.extend(collected.get("replaced_destinations") or [])
     for old in replaced_names:
         old = str(old or "").strip()
         if old and not (current_anchor and same_route_place(old, current_anchor)) and same_route_place(place, old):
@@ -2548,6 +3183,13 @@ def nearby_existing_places_from_local_pool(anchor_name: str, existing_places: li
         wanted_roles = ["non_food", "light_food"]
     else:
         wanted_roles = ["light_food", "meal", "non_food"]
+    interest_names = [str(x) for x in ((intent or {}).get("interests") or [])]
+    if any(x in interest_names for x in ["美食"]):
+        wanted_roles = ["meal", "light_food", "non_food"]
+    elif any(x in interest_names for x in ["咖啡"]):
+        wanted_roles = ["light_food", "meal", "non_food"]
+    elif any(x in interest_names for x in ["文化", "艺术", "展览", "自然", "散步", "购物", "拍照", "亲子"]):
+        wanted_roles = ["non_food", "light_food", "meal"]
 
     def local_candidate_matches_anchor(row, name: str) -> bool:
         if not structured_plan_fast_mode():
@@ -2601,12 +3243,15 @@ def nearby_existing_places_from_local_pool(anchor_name: str, existing_places: li
             available_bonus = 10 if row_has_seat(row) else 0
             coupon_bonus = 5 if bool(row.get("是否有团购", False)) else 0
             area_bonus = 40 if area_hint and area_hint in name else 0
+            interest_terms = interest_keywords((intent or {}).get("interests") or [])
+            fields_for_interest = f"{name} {row.get('search_tags','')} {row.get('地点类型','')} {row.get('sub_type','')}"
+            interest_bonus = 45 if any(str(term).lower() in fields_for_interest.lower() for term in interest_terms) else 0
             price_penalty = float(row.get("最低价格", 0) or 0) / 40
         except (TypeError, ValueError):
             available_bonus = coupon_bonus = area_bonus = 0
             price_penalty = 0
         candidates.append(
-            (wanted_roles.index(role), -(available_bonus + coupon_bonus + area_bonus - price_penalty), name))
+            (wanted_roles.index(role), -(available_bonus + coupon_bonus + area_bonus + interest_bonus - price_penalty), name))
 
     candidates.sort()
     candidates = vary_candidates(candidates, intent, f"local_pool:{anchor_name}")
@@ -2858,9 +3503,134 @@ def find_and_persist_nearby_replacement(
     return None
 
 
+def emergency_route_search_specs(intent: dict, force_indoor: bool = False, force_coupon: bool = False) -> list[dict]:
+    """Specs for the final Amap-only rebuild when local/RAG candidates cannot satisfy 固定距离."""
+    specs = []
+    base = default_amap_search_spec(intent, " ".join([
+        str((intent or {}).get("location") or ""),
+        str((intent or {}).get("meal_pref") or ""),
+        " ".join((intent or {}).get("place_keywords", []) or []),
+    ]))
+    if base:
+        specs.append(base)
+    if force_indoor:
+        specs.extend([
+            {"keyword": "商场", "place_type": "leisure", "sub_type": "shopping"},
+            {"keyword": "咖啡", "place_type": "restaurant", "sub_type": "cafe"},
+            {"keyword": "餐厅", "place_type": "restaurant", "sub_type": "restaurant"},
+        ])
+    else:
+        specs.extend([
+            {"keyword": "咖啡", "place_type": "restaurant", "sub_type": "cafe"},
+            {"keyword": "餐厅", "place_type": "restaurant", "sub_type": "restaurant"},
+            {"keyword": "公园", "place_type": "leisure", "sub_type": "park"},
+            {"keyword": "商场", "place_type": "leisure", "sub_type": "shopping"},
+            {"keyword": "景点", "place_type": "attraction", "sub_type": "scenic"},
+        ])
+    if force_coupon:
+        for spec in specs:
+            spec["force_coupon"] = True
+
+    seen = set()
+    result = []
+    for spec in specs:
+        key = (spec.get("keyword"), spec.get("place_type"), spec.get("sub_type"))
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append(spec)
+    return result
+
+
+def find_emergency_amap_place_near(
+        anchor: str,
+        intent: dict,
+        existing_places: set,
+        max_m: int,
+        force_indoor: bool = False,
+        force_coupon: bool = False,
+) -> Optional[str]:
+    """Find and persist one Amap POI that is truly within max_m from anchor."""
+    if os.getenv("ENABLE_AMAP_POI_SEARCH", "1") != "1" or not get_amap_key() or not anchor:
+        return None
+    existing_keys = {normalize_place_text(p) for p in existing_places if p}
+    for spec in emergency_route_search_specs(intent, force_indoor=force_indoor, force_coupon=force_coupon):
+        pois = amap_search_pois_near(
+            departure=anchor,
+            keyword=spec["keyword"],
+            radius=max(1000, max_m),
+            limit=_safe_int(os.getenv("AMAP_EMERGENCY_POI_LIMIT", "8"), 8),
+        )
+        pois = vary_candidates(pois, intent, f"amap_emergency:{anchor}:{spec['keyword']}")
+        for poi in pois:
+            name = str(poi.get("name") or "").strip()
+            if not name or normalize_place_text(name) in existing_keys:
+                continue
+            if _safe_int(poi.get("distance_m"), 0) > max_m:
+                continue
+            if force_indoor and spec.get("sub_type") == "park":
+                continue
+            try:
+                persisted = persist_amap_poi_with_mock(
+                    poi,
+                    spec,
+                    force_coupon=force_coupon or bool(spec.get("force_coupon")),
+                )
+            except Exception as e:
+                print(f"⚠️ 高德强制补点入库失败: {name} / {e}")
+                persisted = name
+            verified_distance = route_distance_between_places(anchor, persisted)
+            if verified_distance is not None and verified_distance <= max_m:
+                return persisted
+    return None
+
+
+def rebuild_schedule_for_places(state: AgentState, structured_plan: dict, places: list[str], departure: str) -> dict:
+    """Rebuild schedule after emergency Amap refill while preserving strict user start time."""
+    collected = state.get("collected_info") or {}
+    intent = state.get("intent") or {}
+    places = unique_preserve_order([p for p in places if p])[:3]
+    old_schedule = structured_plan.get("schedule") or []
+    if not old_schedule:
+        slots = build_schedule_slots(collected, intent, max(1, len(places)))
+        old_schedule = [{"time": slot} for slot in slots]
+    structured_plan["schedule"] = enrich_schedule_addresses(rebuild_schedule_with_places(old_schedule, places))
+    structured_plan["places"] = unique_preserve_order([
+        item.get("place")
+        for item in structured_plan.get("schedule", [])
+        if isinstance(item, dict) and item.get("place")
+    ])
+    structured_plan.setdefault("hard_constraints", {})["departure"] = departure
+    return structured_plan
+
+
+def schedule_place_names(structured_plan: dict) -> list[str]:
+    return [
+        item.get("place")
+        for item in (structured_plan.get("schedule") or [])
+        if isinstance(item, dict) and item.get("place")
+    ]
+
+
+def anchor_radius_violations(structured_plan: dict) -> list[dict]:
+    """Backward-compatible no-op: anchor radius is not a hard constraint."""
+    return []
+
+
+def route_needs_emergency_rebuild(structured_plan: dict, route_segments: list[dict],
+                                  failed_segments: list[str]) -> bool:
+    """Backward-compatible no-op: distance is reference-only, so emergency hard rebuild is disabled."""
+    return False
+
+
+def force_rebuild_route_with_amap(state: AgentState, structured_plan: dict, departure: str) -> tuple[dict, list[str]]:
+    """Backward-compatible no-op: no emergency hard-distance rebuild is applied."""
+    return structured_plan, []
+
+
 def apply_quick_adjustment_to_places(places: list[str], state: AgentState, intent: dict) -> tuple[list[str], list[str]]:
     modes = state.get("adjustment_modes") or ([state.get("adjustment_mode")] if state.get("adjustment_mode") else [])
-    modes = [mode for mode in unique_preserve_order(modes) if mode and mode != "regenerate"]
+    modes = [mode for mode in unique_preserve_order(modes) if mode]
     locked_keys = locked_route_place_keys(state, intent)
     avoid_places = {
         place for place in (state.get("avoid_places") or [])
@@ -2926,19 +3696,6 @@ def apply_quick_adjustment_to_places(places: list[str], state: AgentState, inten
                 force_coupon=combined_coupon,
                 exclude_places=avoid_places,
             )
-
-        # 如果本地表没有满足快捷约束的候选，再少量调用高德补点。
-        # 这一步只替换非用户锁定锚点，避免“换室内/便宜/团购”完全停留在提示文案。
-        if not replacement and mode in {"cheaper", "indoor", "coupon"}:
-            replacement = find_and_persist_nearby_replacement(
-                anchor or departure or anchor_name or place,
-                place,
-                intent,
-                nearby_radius_m,
-                force_indoor=combined_indoor or mode == "indoor",
-                force_coupon=combined_coupon or mode == "coupon",
-                exclude_places=avoid_places,
-            )
         return replacement or place, replacement
 
     for mode in modes:
@@ -2999,14 +3756,6 @@ def apply_quick_adjustment_to_places(places: list[str], state: AgentState, inten
                     "coupon" if combined_coupon else "indoor",
                     anchor,
                     intent,
-                    force_indoor=combined_indoor,
-                    force_coupon=combined_coupon,
-                    exclude_places=avoid_places,
-                ) or find_and_persist_nearby_replacement(
-                    anchor or departure or anchor_name or place,
-                    place,
-                    intent,
-                    nearby_radius_m,
                     force_indoor=combined_indoor,
                     force_coupon=combined_coupon,
                     exclude_places=avoid_places,
@@ -3108,6 +3857,11 @@ def route_distance_between_places(start: str, end: str) -> Optional[int]:
         return None
     route = amap_driving_distance(start_coord, end_coord)
     return route["distance_m"] if route else None
+
+
+def enforce_adjacent_distance_limit(places: list[str], state: AgentState, intent: dict) -> tuple[list[str], list[str]]:
+    """Backward-compatible no-op: route distance is reference-only and does not remove places."""
+    return places, []
 
 
 def estimate_queue_minutes(row) -> int:
@@ -3287,7 +4041,9 @@ def choose_nearest_candidate_row(anchor_name: str, candidates):
 def normalize_intent_place_type(intent: dict, user_input: str) -> dict:
     """把用户口语里的地点偏好归一到 mock 表支持的 5 类，避免输出 suburban 等未知类型。"""
     normalized = dict(intent or {})
-    text = f"{user_input} {normalized.get('location', '')} {normalized.get('place_type', '')}".lower()
+    interests = normalized.get("interests") or []
+    interest_text = " ".join([str(x) for x in interests] + interest_keywords(interests))
+    text = f"{user_input} {normalized.get('location', '')} {normalized.get('place_type', '')} {interest_text}".lower()
     raw_place_type = str(normalized.get("place_type") or "").strip().lower()
 
     if raw_place_type in CANONICAL_PLACE_TYPES:
@@ -3304,6 +4060,7 @@ def normalize_intent_place_type(intent: dict, user_input: str) -> dict:
     expanded_keywords = []
     for keywords in PLACE_TYPE_KEYWORDS.values():
         expanded_keywords.extend([kw for kw in keywords if kw.lower() in text])
+    expanded_keywords.extend(interest_keywords(interests))
 
     normalized["place_type"] = chosen_type
     normalized["place_keywords"] = sorted(set(expanded_keywords))
@@ -3314,13 +4071,7 @@ def normalize_intent_place_type(intent: dict, user_input: str) -> dict:
 
 
 def parse_people_count(value, default: Optional[int] = None) -> Optional[int]:
-    """Parse Arabic / Chinese people counts and common companion phrases.
-
-    规则优先级：
-    1. 明确数字/中文数字优先；
-    2. “一家三口/四口”等家庭表达；
-    3. “我和父母/和爸妈”= 3 人；“和妈妈/和爸爸/和朋友”= 2 人。
-    """
+    """Parse Arabic or simple Chinese people counts from LLM output or user text."""
     if value is None:
         return default
     if isinstance(value, (int, float)):
@@ -3337,7 +4088,6 @@ def parse_people_count(value, default: Optional[int] = None) -> Optional[int]:
         r"(\d+)\s*(?:个)?人",
         r"(\d+)\s*(?:位|名)",
         r"人数[：: ]*(\d+)",
-        r"一家\s*(\d+)\s*口",
     ]
     for pattern in digit_patterns:
         match = re.search(pattern, text)
@@ -3347,77 +4097,21 @@ def parse_people_count(value, default: Optional[int] = None) -> Optional[int]:
     chinese_patterns = [
         r"([一二两俩三四五六七八九十])\s*(?:个)?人",
         r"([一二两俩三四五六七八九十])\s*(?:位|名)",
-        r"一家\s*([一二两俩三四五六七八九十])\s*口",
+        r"一家([一二两俩三四五六七八九十])口",
     ]
     for pattern in chinese_patterns:
         match = re.search(pattern, text)
         if match:
             return CHINESE_NUMERAL_MAP.get(match.group(1), default)
 
-    normalized = re.sub(r"\s+", "", text)
-    parents_words = ["父母", "爸妈", "爸爸妈妈", "爹妈", "双亲"]
-    single_parent_words = ["妈妈", "母亲", "爸爸", "父亲", "老妈", "老爸"]
-    friend_words = ["朋友", "同学", "同事", "对象", "男朋友", "女朋友", "伴侣", "闺蜜"]
-
-    if any(word in normalized for word in parents_words) and re.search(r"(?:我|我们)?(?:和|跟|带|陪)", normalized):
+    compact_text = re.sub(r"\s+", "", text)
+    if any(word in compact_text for word in ["父母", "爸妈", "爸爸妈妈", "爹妈"]) and re.search(r"(?:我|我们)?(?:和|跟|带|陪)", compact_text):
         return 3
-    if any(word in normalized for word in single_parent_words) and re.search(r"(?:我|我们)?(?:和|跟|带|陪)", normalized):
+    if any(word in text for word in ["我和朋友", "和朋友", "跟朋友", "我俩", "我们俩"]):
         return 2
-    if any(word in normalized for word in friend_words) and re.search(r"(?:我|我们)?(?:和|跟|带|陪)", normalized):
-        return 2
-    if any(word in normalized for word in ["我俩", "我们俩", "两个人", "两人"]):
+    if re.search(r"(?:和|跟|带|陪)(?:妈妈|爸爸|朋友|同学|同事|对象|男朋友|女朋友)", compact_text):
         return 2
     return default
-
-
-def repair_mojibake_text(value) -> str:
-    """Best-effort repair for occasional UTF-8 text decoded as latin-1 in UI/LLM hops."""
-    text = str(value or "").strip()
-    if not text:
-        return ""
-    if any(marker in text for marker in ["Ã", "Â", "ä", "å", "æ", " "]):
-        try:
-            repaired = text.encode("latin1", errors="ignore").decode("utf-8", errors="ignore").strip()
-            # 只有修复后确实更像中文/正常文本时才采用，避免误伤英文。
-            if repaired and (re.search(r"[一-鿿]", repaired) or len(repaired) >= len(text) - 2):
-                text = repaired
-        except Exception:
-            pass
-    return text.replace(" ", "").strip()
-
-
-def normalize_budget_text(value, default: str = "") -> str:
-    """Normalize budget into a stable human-readable Chinese string for backend and frontend.
-
-    解决预算字段在 LLM/前端之间被写成数字、None、NaN、错误编码或重复单位的问题。
-    """
-    if value is None:
-        return default
-    if isinstance(value, (int, float)):
-        try:
-            amount = int(value)
-            return f"人均{amount}元以内" if amount > 0 else (default or "预算待定")
-        except (TypeError, ValueError):
-            return default
-
-    text = repair_mojibake_text(value)
-    if not text or text.lower() in {"none", "null", "nan", "undefined"}:
-        return default
-    text = text.replace("￥", "").replace("¥", "").replace("RMB", "").replace("rmb", "")
-    text = re.sub(r"\s+", "", text)
-    text = text.replace("每人", "人均").replace("一个人", "人均")
-    text = re.sub(r"(以内|以下|左右|上下){2,}", lambda m: m.group(1), text)
-
-    total_like = any(token in text for token in ["总预算", "总共", "合计", "一共"])
-    per_like = any(token in text for token in ["人均", "每人", "单人"])
-    match = re.search(r"(\d{1,5})(?:\.0+)?", text)
-    if match:
-        amount = int(match.group(1))
-        suffix = "左右" if "左右" in text or "上下" in text else "以内"
-        if total_like and not per_like:
-            return f"总预算{amount}元{suffix}"
-        return f"人均{amount}元{suffix}"
-    return text or default
 
 
 def extract_start_time_hint_from_user_text(user_input: str) -> Optional[str]:
@@ -3452,10 +4146,7 @@ def _safe_int(value, default: int) -> int:
 
 def normalize_place_text(text: str) -> str:
     value = str(text or "").lower()
-    # 归一化时必须去掉中英文引号。否则“松江大学城”和松江大学城
-    # 会被视为不同锚点，导致“把出发地换为‘松江大学城’”这类输入
-    # 无法触发出发地/目的地冲突清理。
-    for ch in " \t\r\n·•-_ /（）()【】[]《》<>，,。；;：:、|‘’'\"“”「」『』":
+    for ch in " \t\r\n·•-_ /（）()【】[]《》<>，,。；;：:、|":
         value = value.replace(ch, "")
     return value
 
@@ -3534,7 +4225,7 @@ def detect_unmatched_specific_place(user_input: str) -> Optional[str]:
             candidate = match.group(1).strip()
             if find_explicit_place_in_user_input(candidate):
                 continue
-            if candidate and candidate not in GENERIC_LOCATION_TERMS:
+            if candidate and candidate not in GENERIC_LOCATION_TERMS and not is_invalid_anchor_text(candidate):
                 return candidate
     return None
 
@@ -3567,91 +4258,27 @@ def extract_location_hint_from_user_text(user_input: str) -> Optional[str]:
     return None
 
 
-ANCHOR_QUOTE_CHARS = "‘’'\"“”「」『』《》<>【】[]（）()"
-ANCHOR_EDIT_PREFIX_RE = re.compile(
-    r"^(?:把|将|请|麻烦|帮我|我想|想|要|需要)?"
-    r"(?:出发地|起点|始发地|出发点|目的地|终点|到达地|想去的地方|要去的地方)"
-    r"(?:给我|帮我)?"
-    r"(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成|为|是|在|到)"
-)
-DEPARTURE_EDIT_PREFIX_RE = re.compile(
-    r"^(?:把|将|请|麻烦|帮我|我想|想|要|需要)?"
-    r"(?:出发地|起点|始发地|出发点)"
-    r"(?:给我|帮我)?"
-    r"(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成|为|是|在|到)"
-)
-DESTINATION_EDIT_PREFIX_RE = re.compile(
-    r"^(?:把|将|请|麻烦|帮我|我想|想|要|需要)?"
-    r"(?:目的地|终点|到达地|想去的地方|要去的地方)"
-    r"(?:给我|帮我)?"
-    r"(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成|为|是|在|到)"
-)
-
-
-def strip_anchor_quotes(text: str) -> str:
-    """Remove wrapper quotes/brackets around a user supplied place anchor."""
-    value = str(text or "").strip()
-    previous = None
-    while value and value != previous:
-        previous = value
-        value = value.strip().strip(ANCHOR_QUOTE_CHARS).strip()
-    return value
-
-
-def strip_anchor_edit_prefix(text: str) -> str:
-    """Strip role-edit command prefixes before treating text as a place."""
-    value = strip_anchor_quotes(text)
-    value = ANCHOR_EDIT_PREFIX_RE.sub("", value, count=1).strip()
-    value = re.sub(r"^(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成)", "", value).strip()
-    return strip_anchor_quotes(value)
-
-
-def text_has_departure_edit_prefix(text: str) -> bool:
-    return bool(DEPARTURE_EDIT_PREFIX_RE.search(str(text or "").strip()))
-
-
-def text_has_destination_edit_prefix(text: str) -> bool:
-    return bool(DESTINATION_EDIT_PREFIX_RE.search(str(text or "").strip()))
-
-
-def match_is_departure_command(text: str, start_index: int) -> bool:
-    """Whether a generic 换成/改成 match belongs to 出发地/起点, not destination."""
-    prefix = re.sub(r"\s+", "", str(text or "")[:max(0, start_index)])
-    return bool(re.search(r"(?:出发地|起点|始发地|出发点)(?:给我|帮我)?$", prefix[-12:]))
-
-
-def candidate_equals_departure_hint(candidate: str, departure_hint: str) -> bool:
-    if not candidate or not departure_hint:
-        return False
-    cleaned = clean_location_hint_candidate(candidate)
-    return normalize_place_text(cleaned) == normalize_place_text(departure_hint)
-
-
 def clean_location_hint_candidate(candidate: str) -> str:
-    """Clean route/edit verbs accidentally captured with a location.
+    """Clean route verbs accidentally captured with a location.
 
-    通用原则：先移除“出发地/起点/目的地/终点 + 换为/改成/设为”等指令壳，
-    再判断“大学城/动物园/博物馆”等地点后缀。这样临港大学城、松江大学城、
-    奉贤大学城等任意“大学城”都不会把整句“出发地换为X”误存为目的地。
+    注意：附近/周边/一带不再被简单当作噪音丢弃。真正的“附近”语义会由
+    extract_spatial_anchor_from_user_text() 转成 area_anchor；这里只返回地点本体。
     """
-    text = str(candidate or "").strip()
+    text = strip_anchor_edit_prefix(candidate)
     if not text:
         return ""
-    text = re.split(r"[/／,，。！？；;\n]", text, maxsplit=1)[0].strip()
+    text = re.split(r"[/／,，。！？；;\\n]", text, maxsplit=1)[0].strip()
     text = re.sub(r"(换近一点|换便宜一点|换室内|换成室内|优先有团购|少走路|重新生成|再来一版)$", "", text).strip()
-
-    # 关键：这个步骤必须发生在 strong_suffixes 判断之前。
-    text = strip_anchor_edit_prefix(text)
-
-    strong_suffixes = ("大学城", "动物园", "植物园", "迪士尼", "乐园", "博物馆", "美术馆", "展览馆", "古镇")
-    if any(text.endswith(suffix) for suffix in strong_suffixes):
-        return text
+    text = normalize_area_like_anchor(text)
     for district in sorted(SHANGHAI_DISTRICT_TERMS, key=len, reverse=True):
         if text == district:
             return district
-    text = re.sub(r"(附近|周边|一带|那边|这边)$", "", text).strip()
+    # “临港大学城/松江大学城”等强后缀地点只能在指令壳清洗后保留。
+    strong_suffixes = ("大学城", "动物园", "植物园", "迪士尼", "乐园", "博物馆", "美术馆", "展览馆", "古镇")
+    if any(text.endswith(suffix) for suffix in strong_suffixes):
+        return text
     text = re.sub(r"(轻松逛吃|逛吃|吃喝玩乐|吃喝|玩乐|玩|逛|走走|散步|吃饭|吃东西|看看|打卡)$", "", text).strip()
-    return strip_anchor_quotes(text)
+    return text
 
 
 def is_departure_only_mention(text: str, candidate: str) -> bool:
@@ -3666,139 +4293,83 @@ def is_departure_only_mention(text: str, candidate: str) -> bool:
     return bool(departure_hit and not destination_hit)
 
 
-def has_departure_change_marker(text: str) -> bool:
-    compact = re.sub(r"\s+", "", str(text or ""))
-    return bool(re.search(
-        r"(?:从[^，。！？；;]{1,30}(?:出发|开始|走)|(?:把|将)?(?:出发地|起点|始发地)(?:换成|换为|改成|改为|换到|改到|设为|设置为|是|在|为))",
-        compact,
-    ))
-
-
-def has_destination_change_marker(text: str) -> bool:
-    compact = re.sub(r"\s+", "", str(text or ""))
-    return bool(re.search(
-        r"(?:目的地|终点|想去的地方|要去的地方|想去|要去|去|逛|玩|安排|不去|不要去|换掉)",
-        compact,
-    ))
-
-
-def is_departure_update_only_text(text: str) -> bool:
-    """True when the latest turn only changes the start point, not the destination.
-
-    例如“出发地换为松江大学城”只能更新 departure，不能把 location/fixed_destination
-    改成“出发地换为松江大学城”或“松江大学城”。
-    """
-    raw = str(text or "").strip()
-    if not raw:
-        return False
-    return bool(has_departure_change_marker(raw) and not has_destination_change_marker(raw))
-
-
-def is_departure_edit_value(value: str, latest_text: str = "", departure_hint: str = "") -> bool:
-    """Detect location/fixed_destination values that are actually departure-edit instructions."""
-    raw = str(value or "").strip()
-    if not raw:
-        return False
-    raw_cleaned = clean_location_hint_candidate(raw)
-    if text_has_departure_edit_prefix(raw):
-        return True
-    if looks_like_anchor_edit_instruction(raw) and any(token in raw for token in ["出发地", "起点", "始发地", "出发点"]):
-        return True
-    if latest_text and normalize_place_text(raw) == normalize_place_text(latest_text) and is_departure_update_only_text(latest_text):
-        return True
-    if departure_hint:
-        if any(token in raw for token in ["出发地", "起点", "始发地", "出发点"]) and normalize_place_text(departure_hint) in normalize_place_text(raw):
-            return True
-        # LLM 有时会把 location 抽成纯地点 X。若本轮明确只是“出发地换为X”，纯 X 也不能成为目的地。
-        if latest_text and is_departure_update_only_text(latest_text) and normalize_place_text(raw_cleaned) == normalize_place_text(departure_hint):
-            return True
-    return False
-
-
 def extract_departure_hint_from_user_text(user_input: str) -> Optional[str]:
-    """规则兜底抽取出发地。"""
+    """规则兜底抽取“从 X 出发/出发地换为 X/起点改成 X”。"""
     text = str(user_input or "")
-    if not text:
-        return None
-    place_chars = r"[‘’'\"“”「」『』《》<>【】（）()\[\]\u4e00-\u9fffA-Za-z0-9·•\-_ ]"
     patterns = [
-        rf"(?:把|将|请|麻烦|帮我|我想|想|要|需要)?(?:出发地|起点|始发地|出发点)(?:给我|帮我)?(?:换成|换为|更换成|更换为|改成|改为|修改成|修改为|调整为|换到|改到|设为|设置为|定为|变成|是|在|为|到)({place_chars}{{2,40}}?)(?:出发|开始|走|$|，|。|！|？|；|;|,)",
-        rf"(?:想|要|准备)?从({place_chars}{{2,40}}?)(?:出发|开始|走|$|，|。|！|？|；|;|,)",
-        rf"({place_chars}{{2,40}}?)(?:出发)",
+        r"(?:把|将|请把)?(?:出发地|起点|始发地)(?:换成|换为|改成|改为|换到|改到|设为|设置为|为|是|在|到)([^，。！？；;、/／\s]{2,30})",
+        r"(?:从)([^，。！？；;、/／\s]{2,30}?)(?:出发|开始|走|$|，|。|！|？|；|;)",
+        r"([^，。！？；;、/／\s]{2,30}?)(?:出发)",
     ]
     for pattern in patterns:
         match = re.search(pattern, text)
         if match:
-            candidate = re.sub(r"^上海市", "", match.group(1).strip())
-            candidate = clean_location_hint_candidate(candidate)
-            candidate = re.sub(r"(附近|周边|一带)$", "", candidate).strip()
-            if candidate and candidate not in GENERIC_LOCATION_TERMS:
+            candidate = clean_location_hint_candidate(match.group(1))
+            if candidate and candidate not in GENERIC_LOCATION_TERMS and not is_invalid_anchor_text(candidate):
                 return candidate
     return None
 
 
 def extract_destination_hint_from_user_text(user_input: str) -> Optional[str]:
-    """规则兜底抽取“到 X / 目的地 X / 想去 X / 目的地换成 X”。
-
-    关键防线：通用“换成/改成/换为”不能吞掉“出发地换为X”。
-    无论 X 是松江大学城、临港大学城、奉贤大学城还是其他强后缀地点，
-    只要换的是出发地/起点，就不允许作为目的地返回。
-    """
+    """规则兜底抽取目的地；附近/区域锚点不作为具体目的地返回。"""
     text = str(user_input or "")
     if is_departure_update_only_text(text):
         return None
+    spatial = extract_spatial_anchor_from_user_text(text)
+    if spatial and spatial.get("exclude_anchor_from_schedule"):
+        return None
+
     suffixes = "动物园|植物园|公园|古镇|乐园|大学城|景区|博物馆|美术馆|展览馆|广场|商场|街区|寺庙|寺|园区|步道|滨江|外滩|沙滩|海滩|海湾|新区|区"
-    place_chars = r"[‘’'\"“”「」『』《》<>【】（）()\[\]\u4e00-\u9fffA-Za-z0-9·•\-_ ]"
-    end_boundary = r"(?=$|，|。|！|？|；|;|,|、|/|／|\s)"
-    quote_prefix = r"[‘’'\"“”「」『』《》<>【】（）()\[\]]{0,2}"
     patterns = [
-        (rf"(?:更换|修改|调整|重新设置|把|将)?(?:目的地|终点|到达地|想去的地方|要去的地方)(?:给我|帮我)?(?:换成|改成|改为|换为|换到|改到|为|是|到|设为|设置为){quote_prefix}({place_chars}{{2,40}}?(?:{suffixes})?){end_boundary}", "destination_explicit"),
-        (rf"(?:不去|不要去|换掉)[^，。！？；;]{{0,18}}(?:了|啦)?[，,、\s]*(?:去|换成|改成|改为|换为|换到|改到){quote_prefix}({place_chars}{{2,40}}?(?:{suffixes})?){end_boundary}", "destination_replace"),
-        (rf"(?:到|去到|目的地是|目的地为|目的地在|终点是|终点为|想去|要去|去|逛|玩|安排){quote_prefix}({place_chars}{{2,40}}?(?:{suffixes})?){end_boundary}", "destination_verb"),
-        (rf"(?:换成|改成|改为|换为|换到|改到){quote_prefix}({place_chars}{{2,40}}?(?:{suffixes})?){end_boundary}", "generic_change"),
+        rf"(?:更换|修改|调整|重新设置)?(?:目的地|终点|想去的地方|要去的地方)(?:换成|改成|改为|换为|换到|改到|为|是|到)([^，。！？；;、/／\s]{{2,30}}(?:{suffixes})?)",
+        rf"(?:不去|不要去|换掉)[^，。！？；;]{{0,18}}(?:了|啦)?[，,、\s]*(?:去|换成|改成|改为|换为|换到|改到)([^，。！？；;、/／\s]{{2,30}}(?:{suffixes})?)",
+        rf"(?:到|去到|目的地是|目的地为|目的地在|终点是|终点为|想去|要去|去|逛|玩|安排)([^，。！？；;、/／\s]{{2,30}}(?:{suffixes})?)",
     ]
-    for pattern, kind in patterns:
-        for match in re.finditer(pattern, text):
-            if kind == "generic_change" and match_is_departure_command(text, match.start()):
-                continue
+    for pattern in patterns:
+        match = re.search(pattern, text)
+        if match:
             candidate = clean_location_hint_candidate(match.group(1))
-            if not candidate or candidate in GENERIC_LOCATION_TERMS:
-                continue
-            if is_departure_only_mention(text, candidate):
-                continue
-            if is_departure_edit_value(match.group(0), text, extract_departure_hint_from_user_text(text) or ""):
-                continue
-            return candidate
-    return extract_location_hint_from_user_text(text)
+            if is_area_anchor_value(candidate):
+                return None
+            if candidate and candidate not in GENERIC_LOCATION_TERMS and not is_departure_only_mention(text, candidate):
+                return candidate
+    candidate = extract_location_hint_from_user_text(text)
+    if candidate and not is_area_anchor_value(candidate):
+        return candidate
+    return None
 
 
 def is_destination_anchor_intent(intent: dict, collected: Optional[dict] = None) -> bool:
-    """用户明确给了目的地/区域时，后续路线应围绕该目的地，而不是围绕默认旧案例。"""
+    """用户明确给了具体目的地时，后续路线应围绕该目的地；区域/附近锚点走 area_anchor 分支。"""
+    if (collected or {}).get("area_anchor") or (intent or {}).get("area_anchor"):
+        return False
     location = str((intent or {}).get("location") or "").strip()
+    if is_area_anchor_value(location):
+        return False
     if not is_concrete_location_anchor(location):
         return False
     if bool((collected or {}).get("_location_explicit")):
         return True
-    if (intent or {}).get("amap_anchor_type") in {"area", "explicit_poi"}:
+    if (intent or {}).get("amap_anchor_type") in {"explicit_poi"}:
         return True
     if (intent or {}).get("explicit_place_match") is True:
-        return True
-    if (intent or {}).get("area_anchor"):
         return True
     return False
 
 
 def planning_anchor_for_intent(intent: dict, collected: dict) -> tuple[str, str]:
-    """返回规划锚点。destination=围绕目的地；departure=围绕出发地。
+    """返回规划锚点。
 
-    目的地锚点必须以 collected/fixed_destination 为最高优先级，不能被历史
-    user_input、旧 intent.location 或上一版 structured_plan 里的旧目的地覆盖。
+    destination=用户点名具体地点；departure=围绕出发地；area/nearby=围绕区域/附近但不把锚点放进 schedule。
     """
+    area_anchor = str((collected or {}).get("area_anchor") or (intent or {}).get("area_anchor") or "").strip()
+    if area_anchor:
+        return area_anchor, str((collected or {}).get("area_anchor_mode") or (intent or {}).get("area_anchor_mode") or "area")
     fixed_destination = str((collected or {}).get("fixed_destination") or (collected or {}).get("active_destination_anchor") or "").strip()
-    if fixed_destination and is_concrete_location_anchor(fixed_destination):
+    if fixed_destination and is_concrete_location_anchor(fixed_destination) and not is_area_anchor_value(fixed_destination):
         return fixed_destination, "destination"
     collected_location = str((collected or {}).get("location") or "").strip()
-    if bool((collected or {}).get("_location_explicit")) and is_concrete_location_anchor(collected_location):
+    if bool((collected or {}).get("_location_explicit")) and is_concrete_location_anchor(collected_location) and not is_area_anchor_value(collected_location):
         return collected_location, "destination"
     if is_destination_anchor_intent(intent, collected):
         return str((intent or {}).get("location") or "").strip(), "destination"
@@ -3817,16 +4388,11 @@ def user_requests_departure_change(latest_text: str, current_departure: str = ""
     """Only unlock a saved departure when the latest message explicitly gives a new one."""
     text = str(latest_text or "")
     hint = extract_departure_hint_from_user_text(text)
-    explicit_change = any(token in text for token in [
-        "换出发地", "改出发地", "出发地改", "出发地换", "出发地改为", "出发地换成", "出发地换为",
-        "把出发地", "设置出发地", "出发地设为",
-        "起点改", "起点换", "起点改为", "起点换成", "起点换为", "把起点", "设置起点", "起点设为",
-    ])
     if not hint:
-        return explicit_change
+        return any(token in text for token in ["换出发地", "改出发地", "起点改", "起点换", "出发地改为", "出发地换成"])
     if not current_departure:
         return True
-    return explicit_change or not same_route_place(hint, current_departure)
+    return not same_route_place(hint, current_departure)
 
 
 def user_requests_destination_change(latest_text: str, current_destination: str = "") -> bool:
@@ -3843,6 +4409,30 @@ def user_requests_destination_change(latest_text: str, current_destination: str 
     if not current_destination:
         return True
     return explicit_change or not same_route_place(hint, current_destination)
+
+
+
+
+
+def latest_area_anchor_change(latest_text: str, current_anchor: str = "") -> Optional[dict]:
+    """Detect a latest-turn area/nearby anchor that should replace an old destination."""
+    text = str(latest_text or "").strip()
+    if not text:
+        return None
+    spatial = extract_spatial_anchor_from_user_text(text)
+    if spatial:
+        anchor = clean_anchor_for_display(spatial.get("anchor", ""))
+        if anchor and (not current_anchor or not same_route_place(anchor, current_anchor)):
+            spatial = dict(spatial)
+            spatial["anchor"] = anchor
+            return spatial
+    m = re.search(r"(?:想去|要去|去|逛|玩|安排到|目的地(?:是|为|到)?)([^，。！？；;、/／\s]{2,20})", text)
+    if m:
+        cand = clean_anchor_for_display(m.group(1))
+        if cand and is_area_anchor_value(cand) and (not current_anchor or not same_route_place(cand, current_anchor)):
+            return {"anchor": cand, "mode": "area", "query": "周边休闲活动", "exclude_anchor_from_schedule": True,
+                    "note": f"用户最新指定区域/商圈“{cand}”，将只作为周边检索锚点，不直接塞进路线。"}
+    return None
 
 
 def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentState) -> tuple[dict, dict, list[str]]:
@@ -3865,24 +4455,7 @@ def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentStat
     latest_destination_hint = extract_destination_hint_from_user_text(latest_text)
     departure_change = bool(latest_departure_hint) and user_requests_departure_change(latest_text, fixed_departure)
     destination_change = bool(latest_destination_hint) and user_requests_destination_change(latest_text, fixed_destination)
-    departure_only_change = is_departure_update_only_text(latest_text)
     notes = []
-
-    if is_departure_edit_value(fixed_destination, latest_text, latest_departure_hint or ""):
-        # 历史状态已经被“出发地换为X”污染成目的地时，先清掉污染值。
-        fixed_destination = ""
-        for key in ["fixed_destination", "active_destination_anchor"]:
-            state.pop(key, None)
-        for key in ["fixed_destination", "active_destination_anchor", "location"]:
-            collected.pop(key, None)
-        collected["_location_explicit"] = False
-        notes.append("已清理被出发地修改语句误写入的目的地字段。")
-
-    if departure_only_change and not destination_change and extracted.get("location"):
-        raw_location = str(extracted.get("location") or "").strip()
-        cleaned_location = clean_location_hint_candidate(raw_location)
-        if is_departure_edit_value(raw_location, latest_text, latest_departure_hint or "") or (latest_departure_hint and normalize_place_text(cleaned_location) == normalize_place_text(latest_departure_hint)):
-            extracted["location"] = None
 
     # 出发地：没有明确修改时，强制保留旧出发地，防止被“上一版目的地”污染。
     if departure_change:
@@ -3911,18 +4484,18 @@ def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentStat
             collected.get("fixed_destination"),
             collected.get("location"),
         ]
-        stale_anchor_names = unique_preserve_order([
+        replaced_names = [
             str(p).strip() for p in previous_candidates
             if p and str(p).strip() and not same_route_place(str(p).strip(), new_destination)
-        ])
-        stale_anchor_keys = [normalize_place_text(p) for p in stale_anchor_names if normalize_place_text(p)]
-        # 旧目的地只作为本轮临时排除条件，不再写入 replaced_destination_* session 字段。
-        for key in ["replaced_destination_keys", "replaced_destinations"]:
-            state.pop(key, None)
-            collected.pop(key, None)
-        if stale_anchor_names:
-            state["exclude_anchor_names_once"] = stale_anchor_names
-            state["exclude_anchor_keys_once"] = stale_anchor_keys
+        ]
+        replaced_keys = {normalize_place_text(p) for p in replaced_names if normalize_place_text(p)}
+        existing_replaced = set(state.get("replaced_destination_keys") or [])
+        state["replaced_destination_keys"] = sorted(existing_replaced | replaced_keys)
+        state["replaced_destinations"] = unique_preserve_order(
+            list(state.get("replaced_destinations") or []) + replaced_names
+        )
+        collected["replaced_destination_keys"] = state["replaced_destination_keys"]
+        collected["replaced_destinations"] = state["replaced_destinations"]
         extracted["location"] = new_destination
         collected["location"] = new_destination
         collected["fixed_destination"] = new_destination
@@ -3935,8 +4508,8 @@ def apply_fixed_anchor_guards(extracted: dict, collected: dict, state: AgentStat
         if isinstance(state.get("intent"), dict):
             state["intent"] = {**state.get("intent", {}), "location": new_destination}
         notes.append(f"已按最新输入更新固定目的地：{new_destination}。")
-        if stale_anchor_names:
-            notes.append(f"本轮仅临时排除旧目的地锚点：{'、'.join(stale_anchor_names)}；不会继续保存在会话状态里。")
+        if replaced_names:
+            notes.append(f"已移除旧目的地锚点：{'、'.join(unique_preserve_order(replaced_names))}。")
     elif fixed_destination:
         extracted["location"] = fixed_destination
         collected["location"] = fixed_destination
@@ -4010,14 +4583,6 @@ def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
     fixed_destination = str(collected.get("fixed_destination") or state.get("fixed_destination") or "").strip()
 
     latest_departure_hint = extract_departure_hint_from_user_text(latest_text) if latest_text else None
-    if is_departure_edit_value(fixed_destination, latest_text, latest_departure_hint or ""):
-        fixed_destination = ""
-        collected.pop("fixed_destination", None)
-        collected.pop("active_destination_anchor", None)
-        if is_departure_edit_value(collected.get("location", ""), latest_text, latest_departure_hint or ""):
-            collected.pop("location", None)
-        state.pop("fixed_destination", None)
-        state.pop("active_destination_anchor", None)
     latest_destination_hint = extract_destination_hint_from_user_text(latest_text) if latest_text else None
     departure_hint = latest_departure_hint if (latest_departure_hint and user_requests_departure_change(latest_text, fixed_departure)) else None
     destination_hint = latest_destination_hint if (latest_destination_hint and user_requests_destination_change(latest_text, fixed_destination)) else None
@@ -4028,10 +4593,6 @@ def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
     if not destination_hint:
         if fixed_destination:
             destination_hint = fixed_destination
-        elif latest_text and is_departure_update_only_text(latest_text):
-            # 本轮只是改出发地，不能从拼接历史 user_input 中把“出发地换为X”
-            # 或历史目的地重新抽成最新目的地。
-            destination_hint = None
         else:
             destination_hint = extract_destination_hint_from_user_text(user_input)
 
@@ -4040,11 +4601,6 @@ def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
         collected["departure"] = departure_hint
         collected["fixed_departure"] = departure_hint
         collected["_departure_explicit"] = True
-    if is_departure_update_only_text(latest_text or user_input) and not destination_hint:
-        raw_location = str(fixed.get("location") or "")
-        cleaned_location = clean_location_hint_candidate(raw_location)
-        if is_departure_edit_value(raw_location, latest_text or user_input, departure_hint or "") or (departure_hint and normalize_place_text(cleaned_location) == normalize_place_text(departure_hint)):
-            fixed["location"] = ""
     if destination_hint and (destination_hint == fixed_destination or not fixed.get("location") or not is_concrete_location_anchor(str(
             fixed.get("location"))) or is_departure_only_mention(latest_text or user_input,
                                                                  str(fixed.get("location")))):
@@ -4053,7 +4609,7 @@ def reconcile_intent_with_rules(intent: dict, state: AgentState) -> dict:
         collected["fixed_destination"] = destination_hint
         collected["active_destination_anchor"] = destination_hint
         collected["_location_explicit"] = True
-    if fixed.get("location") and (is_departure_only_mention(user_input, str(fixed.get("location"))) or is_departure_edit_value(str(fixed.get("location")), latest_text or user_input, departure_hint or "")):
+    if fixed.get("location") and is_departure_only_mention(user_input, str(fixed.get("location"))):
         fixed["location"] = ""
     if fixed.get("location") and not is_concrete_location_anchor(str(fixed.get("location"))):
         fixed["location"] = ""
@@ -4254,6 +4810,227 @@ def resolve_generic_location(intent: dict) -> dict:
 # ==========================================
 
 # ✅ 新增：供 API 调用的信息收集函数（不阻塞，返回追问话术）
+def extract_budget_hint_from_user_text(user_input: str) -> Optional[str]:
+    """规则级抽取预算，避免首轮只依赖 LLM。"""
+    text = str(user_input or "")
+    compact = re.sub(r"\s+", "", text)
+    if not compact:
+        return None
+    total_match = re.search(r"(?:总预算|预算总共|总共|一共)(?:约|大概|控制在|不超过|少于|低于|以内)?(\d{2,5})\s*(?:元|块)?(?:以内|以下|左右)?", compact)
+    if total_match:
+        suffix = "以内" if re.search(r"(?:以内|以下|不超过|少于|低于|控制在)", compact) else "左右"
+        return f"总预算{int(total_match.group(1))}元{suffix}"
+    pp_match = re.search(r"(?:人均|每人|单人|一个人)(?:约|大概|控制在|不超过|少于|低于|以内)?(\d{2,5})\s*(?:元|块)?(?:以内|以下|左右)?", compact)
+    if pp_match:
+        suffix = "以内" if re.search(r"(?:以内|以下|不超过|少于|低于|控制在)", compact) else "左右"
+        return f"人均{int(pp_match.group(1))}元{suffix}"
+    generic_match = re.search(r"(?:预算|消费|花费|价格|价位)?(?:约|大概|控制在|不超过|少于|低于)?(\d{2,5})\s*(?:元|块)(?:以内|以下|左右)?", compact)
+    if generic_match:
+        amount = int(generic_match.group(1))
+        suffix = "以内" if re.search(r"(?:以内|以下|不超过|少于|低于|控制在)", compact) else "左右"
+        return f"人均{amount}元{suffix}"
+    if any(word in compact for word in ["便宜", "省钱", "低预算", "学生党"]):
+        return "人均100元以内"
+    return None
+
+
+def extract_date_hint_from_user_text(user_input: str) -> Optional[str]:
+    """规则级抽取日期/星期，作为 LLM 漏抽兜底。"""
+    text = str(user_input or "")
+    patterns = [
+        r"(20\d{2}[-/.年]\d{1,2}[-/.月]\d{1,2}[日号]?)",
+        r"(\d{1,2}\s*月\s*\d{1,2}\s*[日号]?)",
+        r"(今天|明天|后天|今晚|本周末|这周末|周末|周六|周日|周天|星期六|星期日|星期天|礼拜六|礼拜天|周一|周二|周三|周四|周五|星期一|星期二|星期三|星期四|星期五)",
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, text)
+        if m:
+            return re.sub(r"\s+", "", m.group(1))
+    return None
+
+
+def extract_duration_hint_from_user_text(user_input: str) -> Optional[int]:
+    text = str(user_input or "")
+    if any(word in text for word in ["半天", "半日"]):
+        return 5
+    m = re.search(r"(\d{1,2})\s*(?:个)?小时", text)
+    if m:
+        return _safe_int(m.group(1), 5)
+    m = re.search(r"([一二两俩三四五六七八九十])\s*(?:个)?小时", text)
+    if m:
+        return CHINESE_NUMERAL_MAP.get(m.group(1), 5)
+    return None
+
+
+
+
+def strip_ui_preference_hints(user_input: str) -> str:
+    """Remove UI-only Interests/Pace hints before extracting departure/destination.
+
+    The hints remain available through extract_ui_preferences_from_text(); this
+    function prevents them from becoming part of a POI or route anchor.
+    """
+    text = str(user_input or "")
+    text = re.sub(r"[（(]\s*(?:兴趣偏好|Interests?|节奏偏好|Pace)[:：][^）)]*[）)]", "", text, flags=re.I)
+    text = re.sub(r"(?:兴趣偏好|Interests?)[:：][^；;。\n]*", "", text, flags=re.I)
+    text = re.sub(r"(?:节奏偏好|Pace)[:：][^；;。\n]*", "", text, flags=re.I)
+    text = re.sub(r"\s+", " ", text).strip(" ，,。；;｜|")
+    return text.strip()
+
+
+INTEREST_KEYWORD_MAP = {
+    "美食": ["餐厅", "美食", "吃饭", "小吃", "火锅", "江浙菜", "本帮菜"],
+    "文化": ["博物馆", "历史", "文化", "纪念馆", "老街", "古镇"],
+    "购物": ["商场", "购物", "广场", "商圈", "百联", "万达", "环球港"],
+    "艺术": ["美术馆", "艺术", "展览", "画廊", "艺术中心"],
+    "自然": ["公园", "森林", "湿地", "郊野", "自然", "草坪"],
+    "拍照": ["拍照", "出片", "打卡", "景观", "滨江", "街区"],
+    "展览": ["展览", "看展", "美术馆", "博物馆", "艺术展"],
+    "咖啡": ["咖啡", "咖啡馆", "下午茶", "甜品", "面包", "烘焙"],
+    "散步": ["散步", "citywalk", "步道", "街道", "滨江", "公园"],
+    "亲子": ["亲子", "家庭", "儿童", "乐园", "动物园", "科技馆"],
+}
+
+PACE_LABEL_MAP = {
+    "relaxed": "Relaxed", "relax": "Relaxed", "放松": "Relaxed", "轻松": "Relaxed",
+    "balanced": "Balanced", "balance": "Balanced", "正常": "Balanced", "均衡": "Balanced",
+    "packed": "Packed", "pack": "Packed", "紧凑": "Packed", "特种兵": "Packed", "充实": "Packed",
+}
+
+
+def extract_ui_preferences_from_text(user_input: str) -> dict:
+    """Parse frontend-injected preference hints without relying on another LLM call."""
+    text = str(user_input or "")
+    interests = []
+    for pattern in [r"兴趣偏好[:：]([^；;。\n]+)", r"Interests?[:：]([^；;。\n]+)"]:
+        m = re.search(pattern, text, flags=re.I)
+        if m:
+            parts = re.split(r"[,，、/\s]+", m.group(1))
+            for part in parts:
+                name = part.strip().lstrip("#")
+                if name in INTEREST_KEYWORD_MAP and name not in interests:
+                    interests.append(name)
+    # Also accept explicit Chinese words from natural language, but only when they are clearly preference-like.
+    if any(token in text for token in ["兴趣", "偏好", "想", "喜欢", "优先", "适合"]):
+        for name in INTEREST_KEYWORD_MAP:
+            if name in text and name not in interests:
+                interests.append(name)
+
+    pace = ""
+    for pattern in [r"节奏偏好[:：]([^；;。\n]+)", r"Pace[:：]([^；;。\n]+)"]:
+        m = re.search(pattern, text, flags=re.I)
+        if m:
+            raw = m.group(1).strip().lower()
+            for key, value in PACE_LABEL_MAP.items():
+                if key.lower() in raw:
+                    pace = value
+                    break
+    if not pace:
+        lowered = text.lower()
+        if any(w in text for w in ["放松", "轻松", "别太累", "慢一点"]) or "relaxed" in lowered:
+            pace = "Relaxed"
+        elif any(w in text for w in ["特种兵", "行程满", "紧凑", "多安排"]) or "packed" in lowered:
+            pace = "Packed"
+        elif "balanced" in lowered:
+            pace = "Balanced"
+    return {"interests": interests, "pace": pace}
+
+
+def interest_keywords(interests) -> list[str]:
+    result = []
+    for name in interests or []:
+        result.extend(INTEREST_KEYWORD_MAP.get(str(name).strip(), []))
+    return unique_preserve_order(result)
+
+
+def build_interest_match_notes(interests, schedule: list[dict]) -> list[str]:
+    if not interests:
+        return []
+    route_text = " ".join(
+        f"{item.get('place','')} {item.get('display_name','')} {item.get('purpose','')} {item.get('place_role','')}"
+        for item in schedule or [] if isinstance(item, dict)
+    )
+    notes = []
+    for name in interests:
+        keys = INTEREST_KEYWORD_MAP.get(str(name), [])
+        matched = [kw for kw in keys if kw and kw.lower() in route_text.lower()]
+        if matched:
+            notes.append(f"{name}：路线里包含“{matched[0]}”相关体验，已尽量贴合该兴趣。")
+        else:
+            notes.append(f"{name}：当前区域候选有限，已作为软偏好参与排序；可继续要求更偏{name}。")
+    return notes
+
+
+def build_pace_note(pace: str, stops: int) -> str:
+    if pace == "Relaxed":
+        return f"Relaxed：控制站点数和转场压力，{stops}个点按慢节奏走，优先留出吃饭/休息/室内缓冲。"
+    if pace == "Packed":
+        return f"Packed：在4-6小时内尽量安排更充实的路线，{stops}个点会更紧凑，适合能接受多走一点的玩法。"
+    return f"Balanced：按正常半日节奏安排，{stops}个点兼顾体验、吃饭和转场。"
+
+def extract_requirements_from_user_text(user_input: str) -> Optional[str]:
+    """收集首轮自然语言里的软约束，统一写入 requirements。"""
+    text = str(user_input or "")
+    rules = [
+        ("室内", ["室内", "不要露天", "避雨", "别晒", "不晒"]),
+        ("少走路", ["少走路", "不想走太多", "别走太多", "不要太累", "轻松一点", "轻松"]),
+        ("优先有团购", ["团购", "优惠券", "有券", "满减"]),
+        ("便宜一点", ["便宜", "省钱", "低预算", "学生党"]),
+        ("地铁优先", ["地铁优先", "公交地铁", "公共交通"]),
+        ("适合父母", ["父母", "爸妈", "长辈"]),
+        ("适合亲子", ["亲子", "小孩", "孩子", "带娃"]),
+        ("适合拍照", ["拍照", "出片", "打卡"]),
+        ("附近/周边生成", list(NEARBY_MARKERS)),
+    ]
+    values = []
+    for label, words in rules:
+        if any(w in text for w in words):
+            values.append(label)
+    return "、".join(unique_preserve_order(values)) if values else None
+
+
+def extract_group_type_from_user_text(user_input: str) -> Optional[str]:
+    text = str(user_input or "")
+    if any(w in text for w in ["父母", "爸妈", "长辈", "家庭", "一家", "亲子", "孩子", "小孩"]):
+        return "家庭"
+    if any(w in text for w in ["情侣", "对象", "男朋友", "女朋友"]):
+        return "情侣"
+    if any(w in text for w in ["朋友", "同学", "同事"]):
+        return "朋友"
+    if any(w in text for w in ["一个人", "独自", "自己"]):
+        return "独行"
+    return None
+
+
+
+def summarize_collected_info_for_followup(collected: dict) -> str:
+    pieces = []
+    if collected.get("date") or collected.get("start_time") or collected.get("time_period"):
+        time_bits = [str(collected.get("date") or "").strip(), str(collected.get("start_time") or collected.get("time_period") or "").strip()]
+        pieces.append("时间" + "".join([b for b in time_bits if b]))
+    if collected.get("num_people"):
+        pieces.append(f"{collected.get('num_people')}人")
+    dest = collected.get("location") or collected.get("area_anchor") or collected.get("fixed_destination")
+    if dest:
+        pieces.append(f"想去/围绕{dest}")
+    if collected.get("departure"):
+        pieces.append(f"从{collected.get('departure')}出发")
+    return "、".join(str(p) for p in pieces if p) or "你刚才说的部分需求"
+
+
+def build_missing_followup_question(collected: dict, missing_followups: list[str]) -> str:
+    label_map = {
+        "departure": "出发地",
+        "destination_or_area": "想去的具体地点/区域",
+        "budget": "人均预算",
+        "transport_mode": "交通方式",
+        "requirements": "其他要求",
+    }
+    labels = [label_map.get(k, k) for k in missing_followups]
+    known = summarize_collected_info_for_followup(collected)
+    missing_text = "、".join(labels)
+    return f"我已识别到：{known}。还差：{missing_text}。请只补充这些信息；没有特别要求可以说“其余你看着办”。"
+
 def collect_required_info_for_api(state: AgentState) -> AgentState:
     """
     API 版本的信息收集节点：
@@ -4273,6 +5050,9 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
 - weather: 出行天气或天气偏好，如"晴天""下雨""阴天""热""冷"，如未提及填 null
 - budget: 大致预算（人均金额整数或描述，如"人均100元""200以内"，如未提及填 null）
 - group_type: 人群类型，从 [情侣, 家庭, 朋友, 独行] 中选择；如未提及填 null
+- transport_mode: 交通方式偏好，如"公交地铁""自驾""打车""步行优先"，如未提及填 null
+- meal_pref: 餐饮偏好，如"火锅""咖啡""江浙菜"，如未提及填 null
+- requirements: 用户的其他要求，如"室内""少走路""有团购""不要太累""附近逛一下"，如未提及填 null
 
 用户输入: {input}
 """)
@@ -4280,10 +5060,14 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
     extract_chain = extract_prompt | llm | StrOutputParser()
 
     current_input = state.get("user_input", "")
+    latest_input = str(state.get("latest_user_input") or current_input or "")
+    # UI 选中的 Interests/Pace 只用于偏好排序，不允许进入地点/起终点抽取。
+    latest_plain = strip_ui_preference_hints(str(state.get("latest_user_command") or latest_input))
+    latest_for_llm = latest_plain or latest_input
     collected = dict(state.get("collected_info") or {})
 
-    # 从最新输入中提取信息
-    result = extract_chain.invoke({"input": current_input})
+    # 从最新一轮输入中提取信息；不要把历史 user_input 里的旧目的地/旧出发地再次抽回来。
+    result = extract_chain.invoke({"input": latest_for_llm})
     cleaned = re.sub(r"```json|```", "", result).strip()
     try:
         extracted = json.loads(cleaned)
@@ -4291,50 +5075,99 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
         print(f"⚠️ 信息提取解析失败: {result}")
         extracted = {}
 
-    explicit_people = parse_people_count(current_input, None)
+    explicit_people = parse_people_count(latest_for_llm, None)
     if explicit_people is not None:
         extracted["num_people"] = explicit_people
     elif extracted.get("num_people") is not None:
         extracted["num_people"] = parse_people_count(extracted.get("num_people"), extracted.get("num_people"))
 
+    # 规则级兜底：把首轮用户已说出的预算/日期/时长/人群/软约束全部并入，不等追问。
+    budget_hint = extract_budget_hint_from_user_text(latest_for_llm)
+    date_hint = extract_date_hint_from_user_text(latest_for_llm)
+    duration_hint = extract_duration_hint_from_user_text(latest_for_llm)
+    group_type_hint = extract_group_type_from_user_text(latest_for_llm)
+    requirements_hint = extract_requirements_from_user_text(latest_for_llm)
+    if budget_hint:
+        extracted["budget"] = budget_hint
+    if date_hint:
+        extracted["date"] = date_hint
+    if duration_hint:
+        extracted["duration_hours"] = duration_hint
+    if group_type_hint:
+        extracted["group_type"] = group_type_hint
+    if requirements_hint:
+        existing_req = str(extracted.get("requirements") or "").strip()
+        extracted["requirements"] = "、".join(unique_preserve_order([existing_req, requirements_hint])) if existing_req else requirements_hint
+
+    ui_prefs = extract_ui_preferences_from_text(latest_input)
+    if ui_prefs.get("interests"):
+        extracted["interests"] = ui_prefs["interests"]
+        interest_req = "兴趣偏好：" + "、".join(ui_prefs["interests"])
+        existing_req = str(extracted.get("requirements") or "").strip()
+        extracted["requirements"] = "、".join(unique_preserve_order([existing_req, interest_req])) if existing_req else interest_req
+    if ui_prefs.get("pace"):
+        extracted["pace"] = ui_prefs["pace"]
+        pace_req = "节奏偏好：" + ui_prefs["pace"]
+        existing_req = str(extracted.get("requirements") or "").strip()
+        extracted["requirements"] = "、".join(unique_preserve_order([existing_req, pace_req])) if existing_req else pace_req
+
+    # 识别“X附近/周边/某区/商圈”这类空间锚点：
+    # 锚点用于附近检索，但不直接作为最终 schedule 站点。
+    latest_for_spatial = latest_for_llm
+    spatial_anchor = extract_spatial_anchor_from_user_text(latest_for_spatial) or extract_spatial_anchor_from_user_text(current_input)
+    area_change = latest_area_anchor_change(latest_for_spatial, collected.get("area_anchor") or collected.get("fixed_destination") or collected.get("location") or "")
+    if area_change:
+        spatial_anchor = area_change
+    if spatial_anchor:
+        collected["area_anchor"] = spatial_anchor["anchor"]
+        collected["area_anchor_mode"] = spatial_anchor.get("mode", "area")
+        collected["_area_anchor_explicit"] = True
+        collected["exclude_anchor_from_schedule"] = True
+        collected["area_anchor_note"] = spatial_anchor.get("note", "")
+        # 区域/附近语义覆盖旧的具体目的地，避免把陆家嘴/浦东新区/中山公园附近直接塞进路线。
+        for k in ["fixed_destination", "active_destination_anchor"]:
+            collected.pop(k, None)
+            state.pop(k, None)
+        collected["_location_explicit"] = False
+        if not extracted.get("location") or normalize_place_text(extracted.get("location")) == normalize_place_text(spatial_anchor["anchor"]) or is_area_anchor_value(str(extracted.get("location") or "")):
+            extracted["location"] = spatial_anchor.get("query") or "周边休闲活动"
+        extracted["area_anchor"] = spatial_anchor["anchor"]
+        extracted["area_anchor_mode"] = spatial_anchor.get("mode", "area")
+        extracted["exclude_anchor_from_schedule"] = True
+
     skip_words = ["看着办", "随便", "都行", "你决定", "你来定", "随机", "无所谓"]
     if any(word in str(extracted.get("location") or "") for word in skip_words):
         extracted["location"] = None
-    if extracted.get("budget") is not None:
-        extracted["budget"] = normalize_budget_text(extracted.get("budget"))
 
-    latest_text_for_hints = str(state.get("latest_user_input") or "").strip()
-    hint_source_text = latest_text_for_hints or current_input
-    departure_hint = extract_departure_hint_from_user_text(hint_source_text)
-    destination_hint = extract_destination_hint_from_user_text(hint_source_text)
+    departure_hint = extract_departure_hint_from_user_text(latest_for_llm)
+    destination_hint = extract_destination_hint_from_user_text(latest_for_llm)
+    latest_text_for_hints = latest_for_llm
     if latest_text_for_hints:
+        latest_departure_hint = extract_departure_hint_from_user_text(latest_text_for_hints)
+        latest_destination_hint = extract_destination_hint_from_user_text(latest_text_for_hints)
         fixed_departure_for_hint = str(state.get("fixed_departure") or collected.get("fixed_departure") or "")
         fixed_destination_for_hint = str(state.get("fixed_destination") or collected.get("fixed_destination") or "")
-        if departure_hint and not user_requests_departure_change(latest_text_for_hints, fixed_departure_for_hint):
-            departure_hint = None
-        if destination_hint and not user_requests_destination_change(latest_text_for_hints, fixed_destination_for_hint):
-            destination_hint = None
-        # 本轮明确只是改出发地时，不允许从拼接历史 current_input 里回捞任何目的地候选。
-        if is_departure_update_only_text(latest_text_for_hints):
-            destination_hint = None
-    start_time_hint = extract_start_time_hint_from_user_text(current_input)
-    transport_mode_hint = extract_transport_mode_from_user_text(current_input)
+        if latest_departure_hint and user_requests_departure_change(latest_text_for_hints, fixed_departure_for_hint):
+            departure_hint = latest_departure_hint
+        if latest_destination_hint and user_requests_destination_change(latest_text_for_hints, fixed_destination_for_hint):
+            destination_hint = latest_destination_hint
+    start_time_hint = extract_start_time_hint_from_user_text(latest_for_llm)
+    transport_mode_hint = extract_transport_mode_from_user_text(latest_for_llm)
     if departure_hint:
         extracted["departure"] = departure_hint
-    departure_only_change = is_departure_update_only_text(latest_text_for_hints or current_input)
-    if destination_hint:
+    if destination_hint and not spatial_anchor:
         extracted["location"] = destination_hint
-    elif departure_hint and departure_only_change:
-        # 本轮只是改出发地；清空 LLM 误抽的 location，旧目的地由 apply_fixed_anchor_guards 保留。
-        extracted["location"] = None
+        # 显式更换目的地时，旧的“附近/区域锚点”必须清掉，否则 overview/tips 会显示旧目的地。
+        for k in ["area_anchor", "area_anchor_mode", "area_anchor_note"]:
+            collected.pop(k, None)
+        collected["_area_anchor_explicit"] = False
+        collected["exclude_anchor_from_schedule"] = False
     elif departure_hint and normalize_place_text(extracted.get("location")) == normalize_place_text(departure_hint):
         extracted["location"] = None
     elif extracted.get("location") is not None:
         cleaned_location = clean_location_hint_candidate(str(extracted.get("location") or ""))
         if cleaned_location != str(extracted.get("location") or ""):
             extracted["location"] = cleaned_location or None
-        if departure_hint and normalize_place_text(extracted.get("location")) == normalize_place_text(departure_hint) and is_departure_update_only_text(current_input):
-            extracted["location"] = None
         if extracted.get("location") and not is_concrete_location_anchor(str(extracted.get("location"))):
             extracted["location"] = None
     if start_time_hint:
@@ -4356,41 +5189,39 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
         state = {**state, "anchor_guard_notes": existing_notes + anchor_guard_notes}
 
     for key in ["departure", "location", "num_people", "date", "time_period", "start_time", "duration_hours", "weather",
-                "budget", "group_type", "transport_mode"]:
+                "budget", "group_type", "transport_mode", "meal_pref", "requirements", "interests", "pace", "area_anchor", "area_anchor_mode", "exclude_anchor_from_schedule"]:
         new_val = extracted.get(key)
         if new_val is not None:
-            if key == "budget":
-                new_val = normalize_budget_text(new_val, collected.get("budget") or "人均200元以内")
             collected[key] = new_val
             if key == "departure" and str(new_val).strip():
                 collected["_departure_explicit"] = True
-            if key == "location" and is_concrete_location_anchor(str(new_val)):
+            if key == "location" and is_concrete_location_anchor(str(new_val)) and not is_area_anchor_value(str(new_val)) and not collected.get("_area_anchor_explicit"):
                 collected["_location_explicit"] = True
 
     print(f"📝 当前已收集信息: {collected}")
 
-    has_anchor = bool(collected.get("departure")) or is_concrete_location_anchor(str(collected.get("location") or ""))
+    has_destination_or_area = bool(collected.get("area_anchor")) or is_concrete_location_anchor(str(collected.get("location") or ""))
     missing_followups = []
-    if not has_anchor:
-        missing_followups.append("location_or_departure")
-    for field in ["budget", "transport_mode"]:
+    if not collected.get("departure"):
+        missing_followups.append("departure")
+    if not has_destination_or_area:
+        missing_followups.append("destination_or_area")
+    for field in ["budget", "transport_mode", "requirements"]:
         if not collected.get(field):
             missing_followups.append(field)
     already_asked = bool(state.get("info_followup_asked"))
-    user_allows_defaults = any(word in current_input for word in skip_words)
+    user_allows_defaults = any(word in latest_for_llm for word in skip_words)
 
     if missing_followups and not already_asked and not user_allows_defaults:
-        question = (
-            "我再确认一次就开始规划：目的地或想玩的类型是哪里/什么？从哪里出发？"
-            "人均预算大概多少？交通方式偏好是步行、公交地铁还是自驾？如果不想细填，也可以直接回“你看着办”。"
-        )
-        print(f"🤖 一次性追问: {question}")
+        question = build_missing_followup_question(collected, missing_followups)
+        print(f"🤖 缺项追问: {question}")
         return {
             **state,
             "collected_info": collected,
             "info_complete": False,
             "info_followup_asked": True,
-            "pending_question": question
+            "pending_question": question,
+            "missing_followups": missing_followups,
         }
 
     defaults = {
@@ -4402,14 +5233,16 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
         "start_time": None,
         "duration_hours": 5,
         "weather": "天气正常",
-        "budget": "人均200元以内",
+        "budget": "预算未指定，以实际路线估算为准",
         "group_type": "朋友",
         "transport_mode": "公交地铁",
+        "requirements": "",
+        "interests": [],
+        "pace": "Balanced",
     }
     for key, value in defaults.items():
         if not collected.get(key):
             collected[key] = value
-    collected["budget"] = normalize_budget_text(collected.get("budget"), "人均200元以内")
     collected.setdefault("_departure_explicit", False)
     collected.setdefault("_location_explicit", False)
 
@@ -4417,6 +5250,7 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
     enriched_input = (
         f"{current_input} "
         f"（目的地/偏好：{collected['location']}，"
+        f"区域/附近锚点：{collected.get('area_anchor') or '无'}，"
         f"出发地点：{collected.get('departure') or '未指定，以目的地作为起点'}，"
         f"出行人数：{collected['num_people']}人，"
         f"出行日期：{collected['date']}，"
@@ -4425,6 +5259,9 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
         f"天气情况：{collected['weather']}，"
         f"大致预算：{collected['budget']}，"
         f"交通方式：{collected['transport_mode']}，"
+        f"其他要求：{collected.get('requirements') or '无'}，"
+        f"兴趣偏好：{'、'.join(collected.get('interests') or []) or '无'}，"
+        f"节奏偏好：{collected.get('pace') or 'Balanced'}，"
         f"出行时长：{collected['duration_hours']}小时）"
     )
     return {
@@ -4435,6 +5272,123 @@ def collect_required_info_for_api(state: AgentState) -> AgentState:
         "pending_question": None
     }
 
+
+
+def fast_collect_required_info_for_api(state: AgentState) -> AgentState:
+    """Rule-based fallback for information collection when the LLM extractor is slow."""
+    current_input = str((state or {}).get("user_input") or "")
+    latest_input = str((state or {}).get("latest_user_input") or current_input or "")
+    latest_plain = strip_ui_preference_hints(str((state or {}).get("latest_user_command") or latest_input)) or latest_input
+    collected = dict((state or {}).get("collected_info") or {})
+    extracted = {}
+
+    people = parse_people_count(latest_plain, None)
+    if people is not None:
+        extracted["num_people"] = people
+    for key, func in [
+        ("budget", extract_budget_hint_from_user_text),
+        ("date", extract_date_hint_from_user_text),
+        ("duration_hours", extract_duration_hint_from_user_text),
+        ("group_type", extract_group_type_from_user_text),
+        ("requirements", extract_requirements_from_user_text),
+        ("start_time", extract_start_time_hint_from_user_text),
+        ("transport_mode", extract_transport_mode_from_user_text),
+    ]:
+        try:
+            value = func(latest_plain)
+        except Exception:
+            value = None
+        if value:
+            extracted[key] = value
+    if extracted.get("start_time"):
+        st = str(extracted["start_time"])
+        if "晚上" in st or "夜" in st:
+            extracted["time_period"] = "晚上"
+        elif "上午" in st or "早" in st:
+            extracted["time_period"] = "上午"
+        else:
+            extracted["time_period"] = "下午"
+
+    spatial = extract_spatial_anchor_from_user_text(latest_plain)
+    if spatial:
+        extracted["area_anchor"] = spatial.get("anchor")
+        extracted["area_anchor_mode"] = spatial.get("mode", "area")
+        extracted["exclude_anchor_from_schedule"] = True
+        extracted["location"] = spatial.get("query") or "周边休闲活动"
+        collected["_area_anchor_explicit"] = True
+        collected["_location_explicit"] = False
+        for k in ["fixed_destination", "active_destination_anchor"]:
+            collected.pop(k, None)
+    dep = extract_departure_hint_from_user_text(latest_plain)
+    dest = extract_destination_hint_from_user_text(latest_plain)
+    if dep:
+        extracted["departure"] = dep
+    if dest and not spatial:
+        extracted["location"] = dest
+        for k in ["area_anchor", "area_anchor_mode", "area_anchor_note"]:
+            collected.pop(k, None)
+        collected["_area_anchor_explicit"] = False
+        collected["exclude_anchor_from_schedule"] = False
+    ui_prefs = extract_ui_preferences_from_text(latest_input)
+    if ui_prefs.get("interests"):
+        extracted["interests"] = ui_prefs["interests"]
+    if ui_prefs.get("pace"):
+        extracted["pace"] = ui_prefs["pace"]
+
+    extracted, collected, anchor_guard_notes = apply_fixed_anchor_guards(extracted, collected, state)
+    if anchor_guard_notes:
+        state = {**state, "anchor_guard_notes": list((state or {}).get("anchor_guard_notes") or []) + anchor_guard_notes}
+    for key, value in extracted.items():
+        if value is not None:
+            collected[key] = value
+            if key == "departure" and str(value).strip():
+                collected["_departure_explicit"] = True
+            if key == "location" and is_concrete_location_anchor(str(value)) and not is_area_anchor_value(str(value)) and not collected.get("_area_anchor_explicit"):
+                collected["_location_explicit"] = True
+
+    has_destination_or_area = bool(collected.get("area_anchor")) or is_concrete_location_anchor(str(collected.get("location") or ""))
+    missing_followups = []
+    if not collected.get("departure"):
+        missing_followups.append("departure")
+    if not has_destination_or_area:
+        missing_followups.append("destination_or_area")
+    for field in ["budget", "transport_mode", "requirements"]:
+        if not collected.get(field):
+            missing_followups.append(field)
+    already_asked = bool((state or {}).get("info_followup_asked"))
+    if missing_followups and not already_asked:
+        return {**state, "collected_info": collected, "info_complete": False, "info_followup_asked": True, "pending_question": build_missing_followup_question(collected, missing_followups), "missing_followups": missing_followups}
+
+    defaults = {
+        "departure": None,
+        "location": "上海周末休闲活动",
+        "num_people": 2,
+        "date": "本周末",
+        "time_period": "下午",
+        "start_time": None,
+        "duration_hours": 5,
+        "weather": "天气正常",
+        "budget": "预算未指定，以实际路线估算为准",
+        "group_type": "朋友",
+        "transport_mode": "公交地铁",
+        "requirements": "",
+        "interests": [],
+        "pace": "Balanced",
+    }
+    for key, value in defaults.items():
+        if not collected.get(key):
+            collected[key] = value
+    collected.setdefault("_departure_explicit", False)
+    collected.setdefault("_location_explicit", False)
+    enriched_input = (
+        f"{current_input} （目的地/偏好：{collected['location']}，区域/附近锚点：{collected.get('area_anchor') or '无'}，"
+        f"出发地点：{collected.get('departure') or '未指定，以目的地作为起点'}，出行人数：{collected['num_people']}人，"
+        f"出行日期：{collected['date']}，出行时间段：{collected['time_period']}，大致预算：{collected['budget']}，"
+        f"交通方式：{collected['transport_mode']}，其他要求：{collected.get('requirements') or '无'}，"
+        f"兴趣偏好：{'、'.join(collected.get('interests') or []) or '无'}，节奏偏好：{collected.get('pace') or 'Balanced'}，"
+        f"出行时长：{collected['duration_hours']}小时）"
+    )
+    return {**state, "user_input": enriched_input, "collected_info": collected, "info_complete": True, "pending_question": None, "fast_collect_fallback": True}
 
 def parse_intent(state: AgentState) -> AgentState:
     """解析用户输入中的人群、时间、地点、偏好等约束"""
@@ -4450,11 +5404,18 @@ def parse_intent(state: AgentState) -> AgentState:
             "duration_hours": collected.get("duration_hours", 5),
             "meal_pref": collected.get("meal_pref", "中餐"),
             "num_people": collected.get("num_people", 2),
-            "budget": normalize_budget_text(collected.get("budget"), "人均200元以内"),
+            "budget": collected.get("budget", "人均200元以内"),
             "place_type": collected.get("place_type", "attraction"),
             "place_keywords": [],
             "start_time": collected.get("start_time"),
             "transport_mode": collected.get("transport_mode", "公交地铁"),
+            "meal_pref": collected.get("meal_pref", "中餐"),
+            "requirements": collected.get("requirements", ""),
+            "interests": collected.get("interests", []) or [],
+            "pace": collected.get("pace", "Balanced"),
+            "area_anchor": collected.get("area_anchor", ""),
+            "area_anchor_mode": collected.get("area_anchor_mode", ""),
+            "exclude_anchor_from_schedule": collected.get("exclude_anchor_from_schedule", False),
         }
         start_time_hint = extract_start_time_hint_from_user_text(state.get("user_input", ""))
         if start_time_hint:
@@ -4516,7 +5477,7 @@ def parse_intent(state: AgentState) -> AgentState:
             "num_people": collected.get("num_people", 2),
             "duration_hours": 5,
             "meal_pref": "中餐",
-            "budget": normalize_budget_text(collected.get("budget"), "适中"),
+            "budget": collected.get("budget", "适中"),
             "place_type": "attraction"
         }
 
@@ -4580,18 +5541,31 @@ def rag_retrieval(state: AgentState) -> AgentState:
     ]
     query = " ".join([str(x) for x in query_parts if x])
 
+    if os.getenv("ENABLE_RAG_RETRIEVAL", "1") != "1":
+        print("📚 RAG 检索已按配置跳过；结构化规划仍按 mock/高德/规则执行。")
+        return {**state, "rag_context": ""}
+
     docs = retriever.invoke(query)
 
+    max_chars = int(os.getenv("RAG_CONTEXT_MAX_CHARS", "1800"))
     context_blocks = []
+    used_chars = 0
     for idx, doc in enumerate(docs, start=1):
         source = doc.metadata.get("source", "unknown")
         chunk_id = doc.metadata.get("chunk_id", doc.metadata.get("doc_id", ""))
+        content = str(doc.page_content or "").strip()
+        remain = max(0, max_chars - used_chars)
+        if remain <= 0:
+            break
+        if len(content) > remain:
+            content = content[:remain] + "…"
+        used_chars += len(content)
         context_blocks.append(
-            f"【参考案例{idx}｜source={source}｜chunk={chunk_id}】\n{doc.page_content}"
+            f"【参考案例{idx}｜source={source}｜chunk={chunk_id}】\n{content}"
         )
     context = "\n\n---\n\n".join(context_blocks)
 
-    print(f"📚 RAG 检索完成，共召回 {len(docs)} 条相关案例")
+    print(f"📚 RAG 检索完成，共召回 {len(docs)} 条相关案例，传入上下文约 {used_chars} 字")
     return {**state, "rag_context": context}
 
 
@@ -5146,7 +6120,217 @@ def format_time_minutes(minutes: int) -> str:
     return f"{minutes // 60:02d}:{minutes % 60:02d}"
 
 
-def build_schedule_slots(collected: dict, intent: dict, count: int) -> list[str]:
+
+def place_duration_profile(place_name: str) -> dict:
+    """Return a type-aware stay-duration profile for a route stop.
+
+    目标不是给每个点平均分时间，而是按“用户真实会停留多久”分配：
+    - 迪士尼/游乐园/大型动物园等长体验点获得更长时间；
+    - citywalk/街区/商圈打卡获得较短时间；
+    - 正餐/咖啡/展馆/影院等按各自典型停留时长处理。
+
+    target/min/max 都是分钟。allocate_dynamic_stop_minutes() 会在这些范围内
+    根据总时长做压缩或扩展，保证整条路线仍贴合 4-6 小时窗口。
+    """
+    name = str(place_name or "")
+    lowered = name.lower()
+    role = place_role(place_name)
+    row = _find_place(place_name)
+    sub_type = str(row.get("sub_type", "") or "").strip() if row is not None else ""
+    place_type = str(row.get("地点类型", "") or "").strip() if row is not None else ""
+    tags = str(row.get("search_tags", "") or "") if row is not None else ""
+    combined = f"{name} {sub_type} {place_type} {tags}".lower()
+
+    def profile(target: int, min_minutes: int, max_minutes: int, category: str, reason: str, priority: int) -> dict:
+        target = int(target)
+        min_minutes = int(min_minutes)
+        max_minutes = int(max_minutes)
+        if max_minutes < min_minutes:
+            max_minutes = min_minutes
+        target = max(min_minutes, min(max_minutes, target))
+        return {
+            "target": target,
+            "min": min_minutes,
+            "max": max_minutes,
+            "category": category,
+            "reason": reason,
+            # priority 越大，额外时间越优先加给它；压缩时间时越晚被压缩。
+            "priority": int(priority),
+        }
+
+    if role == "meal":
+        return profile(95, 75, 125, "meal", "正餐需要点餐、用餐和休息，保留中等偏长停留。", 7)
+    if role == "light_food":
+        return profile(45, 30, 65, "light_food", "咖啡/甜品主要用于补给和休息，停留不宜过长。", 3)
+
+    # 明确长时间游玩：游乐园、迪士尼、探险乐园、大型亲子/主题项目。
+    if sub_type == "theme_park" or any(k in combined for k in [
+        "迪士尼", "乐园", "游乐", "主题公园", "森林探险", "探险乐园", "欢乐谷", "海昌", "玛雅海滩"
+    ]):
+        return profile(190, 150, 240, "theme_park", "游乐园/主题项目排队和体验时间长，因此作为长停留核心点。", 10)
+
+    # 大型自然/动物/植物类，通常比普通公园更久。
+    if any(k in combined for k in ["动物园", "野生动物", "植物园", "森林公园", "郊野公园", "湿地", "辰山", "顾村"]):
+        return profile(150, 110, 210, "large_nature", "大型公园/动物园/植物园需要较长游玩和步行时间。", 9)
+
+    # 普通公园、滨江绿地、自然休闲。
+    if sub_type == "park" or any(k in combined for k in ["公园", "草坪", "绿地", "滨江", "江边", "森林"]):
+        return profile(110, 75, 160, "park", "公园类适合慢走拍照，但半日路线中不宜无限拉长。", 6)
+
+    # city walk / 街区 / 步行街：更像路过、拍照、轻逛。
+    if sub_type == "street_walk" or any(k in combined for k in [
+        "citywalk", "城市漫步", "步行街", "大学路", "武康路", "安福路", "多伦路", "甜爱路", "街区", "老街", "步道"
+    ]):
+        return profile(60, 35, 85, "street_walk", "街区/city walk 以轻逛和打卡为主，停留比大型景点短。", 4)
+
+    # 展馆、博物馆、美术馆：中等偏长，但通常比游乐园短。
+    if sub_type in {"museum", "art_exhibition"} or any(k in combined for k in ["博物馆", "美术馆", "艺术馆", "展览", "展馆", "画廊"]):
+        return profile(100, 70, 150, "museum_exhibition", "展馆类需要完整参观动线，分配中等偏长时间。", 7)
+
+    if sub_type == "cinema" or any(k in combined for k in ["影院", "影城", "电影"]):
+        return profile(130, 105, 170, "cinema", "电影按完整片长和入退场时间计算。", 8)
+
+    if sub_type == "spa_relax" or any(k in combined for k in ["汤泉", "温泉", "泡汤", "洗浴"]):
+        return profile(150, 120, 210, "spa_relax", "泡汤/汤泉是慢节奏体验，适合长停留。", 9)
+
+    if any(k in combined for k in ["ktv", "KTV".lower(), "唱歌", "量贩", "歌城"]):
+        return profile(120, 90, 180, "ktv", "KTV 通常按小时计费和体验，至少预留一段完整时间。", 8)
+
+    if sub_type == "shopping" or any(k in combined for k in ["商场", "广场", "购物中心", "印象城", "合生汇", "万达", "环球港", "百联"]):
+        return profile(70, 45, 110, "shopping", "商场/购物中心适合休息和轻逛，时间控制在中等。", 5)
+
+    if place_type in {"sports"} or any(k in combined for k in ["运动", "攀岩", "射箭", "保龄球", "骑行"]):
+        return profile(110, 80, 160, "sports", "运动体验需要准备、体验和缓冲时间。", 7)
+
+    if place_type == "activity":
+        return profile(90, 60, 130, "activity", "活动体验按中等停留处理。", 6)
+
+    if place_type in {"attraction", "leisure"}:
+        return profile(80, 50, 120, "attraction", "普通景点/休闲点按轻中度停留处理。", 5)
+
+    return profile(65, 40, 100, "general", "普通地点按较轻停留处理。", 4)
+
+
+def place_duration_weight(place_name: str) -> int:
+    """Backward-compatible weight used by older code paths."""
+    return int(place_duration_profile(place_name).get("target", 80))
+
+
+def _distribute_duration_diff(durations: list[int], profiles: list[dict], diff: int) -> list[int]:
+    """Distribute duration diff while respecting min/max and place priorities."""
+    if not durations or diff == 0:
+        return durations
+
+    # diff > 0: 给更需要长时间的点加时间；diff < 0: 优先从低优先级/可压缩点扣时间。
+    if diff > 0:
+        order = sorted(range(len(durations)), key=lambda i: profiles[i].get("priority", 0), reverse=True)
+    else:
+        order = sorted(range(len(durations)), key=lambda i: profiles[i].get("priority", 0))
+
+    step = 5
+    guard = 0
+    while diff != 0 and guard < 2000:
+        changed = False
+        for i in order:
+            if diff == 0:
+                break
+            if diff > 0:
+                room = int(profiles[i].get("max", durations[i])) - durations[i]
+                if room <= 0:
+                    continue
+                delta = min(step, diff, room)
+                durations[i] += delta
+                diff -= delta
+                changed = True
+            else:
+                room = durations[i] - int(profiles[i].get("min", 35))
+                if room <= 0:
+                    continue
+                delta = min(step, -diff, room)
+                durations[i] -= delta
+                diff += delta
+                changed = True
+        if not changed:
+            break
+        guard += 1
+
+    # 处理非 5 分钟倍数或极端情况下仍未归零的差值，最后放到可调整空间最大的点。
+    if diff != 0:
+        candidates = []
+        for i, value in enumerate(durations):
+            if diff > 0:
+                room = int(profiles[i].get("max", value)) - value
+            else:
+                room = value - int(profiles[i].get("min", 35))
+            if room > 0:
+                candidates.append((room, profiles[i].get("priority", 0), i))
+        if candidates:
+            candidates.sort(reverse=(diff > 0))
+            i = candidates[0][2]
+            if diff > 0:
+                delta = min(diff, int(profiles[i].get("max", durations[i])) - durations[i])
+                durations[i] += delta
+            else:
+                delta = min(-diff, durations[i] - int(profiles[i].get("min", 35)))
+                durations[i] -= delta
+    return durations
+
+
+def allocate_dynamic_stop_minutes(places: list[str], total_minutes: int) -> list[int]:
+    """Allocate stop durations by POI type instead of averaging.
+
+    Examples:
+    - 迪士尼/游乐园会明显长于 city walk；
+    - city walk/街区/商圈轻逛会较短；
+    - 正餐、咖啡、展馆、影院、汤泉各有独立停留区间；
+    - 最终总和仍严格贴合 total_minutes。
+    """
+    places = [str(p or "").strip() for p in places if str(p or "").strip()]
+    if not places:
+        return [max(60, int(total_minutes or 300))]
+
+    total_minutes = max(60, int(total_minutes or 300))
+    profiles = [place_duration_profile(p) for p in places]
+    durations = [int(p["target"]) for p in profiles]
+
+    # 如果总目标时长与用户窗口不一致，只在 min/max 内按优先级调整。
+    durations = _distribute_duration_diff(durations, profiles, total_minutes - sum(durations))
+
+    current = sum(durations)
+    if current != total_minutes:
+        # 极端情况：所有点的 min 之和仍超过总时长，按比例压缩到至少 30 分钟。
+        if current > total_minutes:
+            floor = 30
+            reducible = sum(max(0, d - floor) for d in durations)
+            need = current - total_minutes
+            if reducible > 0:
+                for i, d in enumerate(list(durations)):
+                    if need <= 0:
+                        break
+                    cut = min(d - floor, round(need * max(0, d - floor) / reducible))
+                    durations[i] -= max(0, cut)
+                # 精确补差。
+                while sum(durations) > total_minutes:
+                    i = max(range(len(durations)), key=lambda idx: durations[idx])
+                    if durations[i] <= floor:
+                        break
+                    durations[i] -= 1
+            else:
+                durations = [max(floor, total_minutes // len(durations)) for _ in durations]
+        elif current < total_minutes:
+            # 如果还有剩余但 max 都满了，就加给最高优先级点；这是比丢时间更合理的兜底。
+            i = max(range(len(durations)), key=lambda idx: profiles[idx].get("priority", 0))
+            durations[i] += total_minutes - current
+
+    # 最后一轮保证分钟数严格相等。
+    diff = total_minutes - sum(durations)
+    if diff and durations:
+        i = max(range(len(durations)), key=lambda idx: profiles[idx].get("priority", 0)) if diff > 0 else min(range(len(durations)), key=lambda idx: profiles[idx].get("priority", 0))
+        durations[i] = max(30, durations[i] + diff)
+    return [int(max(30, d)) for d in durations]
+
+def build_schedule_slots(collected: dict, intent: dict, count: int, places: Optional[list[str]] = None) -> list[str]:
+    """生成时间槽。传入 places 时按地点类型动态分配，不再平均切分。"""
     time_period = collected.get("time_period") or intent.get("time_period") or "下午"
     start_minutes = parse_start_time_minutes(collected.get("start_time") or intent.get("start_time"), time_period)
     if start_minutes is None:
@@ -5158,16 +6342,405 @@ def build_schedule_slots(collected: dict, intent: dict, count: int) -> list[str]
     )
     total_minutes = total_hours * 60
     count = max(1, int(count or 1))
-    base = total_minutes // count
-    remainder = total_minutes % count
-    durations = [base + (1 if index < remainder else 0) for index in range(count)]
+    if places:
+        durations = allocate_dynamic_stop_minutes(list(places)[:count], total_minutes)
+    else:
+        base = total_minutes // count
+        remainder = total_minutes % count
+        durations = [base + (1 if index < remainder else 0) for index in range(count)]
+
     slots = []
     cursor = start_minutes
-    for index, duration in enumerate(durations):
+    for duration in durations[:count]:
         end = min(cursor + duration, 23 * 60 + 59)
         slots.append(f"{format_time_minutes(cursor)}-{format_time_minutes(end)}")
         cursor = end
     return slots
+
+
+def duration_minutes_from_slot(slot: str) -> int:
+    m = re.match(r"(\d{1,2}):(\d{2})-(\d{1,2}):(\d{2})", str(slot or ""))
+    if not m:
+        return 0
+    h1, m1, h2, m2 = map(int, m.groups())
+    return max(0, h2 * 60 + m2 - (h1 * 60 + m1))
+
+
+def build_availability_event(place: str, status: str, message: str, backup: str = "", level: str = "info") -> dict:
+    return {
+        "type": status,
+        "place_name": place,
+        "original_place": place,
+        "backup_place": backup or "",
+        "display_level": level,
+        "message": message,
+    }
+
+
+def availability_status_for_place(place: str) -> dict:
+    row = find_place_exact_for_route(place)
+    if row is None:
+        row = _find_place(place)
+    if row is None:
+        return {
+            "status": "unknown",
+            "level": "info",
+            "has_seat": None,
+            "seat_count": 0,
+            "queue_minutes": 0,
+            "message": f"{place} 未在 mock 表中查到实时余位，建议出发前二次核验。",
+        }
+    seat_count = row_seat_count(row)
+    has_seat = row_has_seat(row)
+    queue_minutes = estimate_queue_minutes(row)
+    if not has_seat:
+        return {
+            "status": "no_seat",
+            "level": "warning",
+            "has_seat": False,
+            "seat_count": seat_count,
+            "queue_minutes": queue_minutes,
+            "message": f"{place} 当前 mock 状态显示暂无余位。",
+        }
+    if queue_minutes >= _safe_int(os.getenv("QUEUE_LONG_WARNING_MINUTES", "45"), 45):
+        return {
+            "status": "queue_long",
+            "level": "warning",
+            "has_seat": True,
+            "seat_count": seat_count,
+            "queue_minutes": queue_minutes,
+            "message": f"{place} 有余位，但预计排队约 {queue_minutes} 分钟，可能偏久。",
+        }
+    return {
+        "status": "available",
+        "level": "success",
+        "has_seat": True,
+        "seat_count": seat_count,
+        "queue_minutes": queue_minutes,
+        "message": f"{place} 当前有余位（剩余 {seat_count}），可正常前往。",
+    }
+
+
+def apply_schedule_availability_checks(schedule: list[dict], state: AgentState, intent: dict) -> tuple[list[dict], list[dict], list[str]]:
+    """对最终 schedule 做余位/排队检查，并在必要时替换为可用备选。"""
+    checked_schedule = []
+    events = []
+    notes = []
+    used = set()
+    for item in schedule or []:
+        if not isinstance(item, dict):
+            continue
+        current = dict(item)
+        place = str(current.get("place") or "").strip()
+        status = availability_status_for_place(place)
+        if status["status"] in {"no_seat", "queue_long"} and not is_locked_route_place(place, state, intent):
+            backup = find_available_alternative_for_unavailable(place, intent, state)
+            if backup and normalize_place_text(backup) not in used and not same_route_place(backup, place):
+                level_reason = "暂无余位" if status["status"] == "no_seat" else f"排队约{status['queue_minutes']}分钟"
+                event = build_availability_event(
+                    place,
+                    status["status"],
+                    f"{place} 当前{level_reason}，已切换为可用备选“{backup}”。",
+                    backup=backup,
+                    level="warning",
+                )
+                events.append(event)
+                notes.append(event["message"])
+                current = set_schedule_place(current, backup)
+                price_detail = place_price_detail(backup)
+                current["price_text"] = price_detail.get("price_text", "价格待核验")
+                current["price_min"] = price_detail.get("price_min", 0)
+                current["price_max"] = price_detail.get("price_max", 0)
+                status = availability_status_for_place(backup)
+                current["availability_status"] = status
+            else:
+                events.append(build_availability_event(place, status["status"], status["message"], level=status["level"]))
+                notes.append(status["message"])
+                current["availability_status"] = status
+        else:
+            events.append(build_availability_event(place, status["status"], status["message"], level=status["level"]))
+            current["availability_status"] = status
+        used.add(normalize_place_text(str(current.get("place") or place)))
+        checked_schedule.append(current)
+    return checked_schedule, events, notes
+
+
+CENTER_CROWD_KEYWORDS = {
+    "陆家嘴", "外滩", "南京东路", "南京西路", "人民广场", "豫园", "新天地", "淮海路",
+    "徐家汇", "静安寺", "武康路", "安福路", "巨鹿路", "长乐路", "愚园路", "五角场",
+    "环球港", "迪士尼", "上海迪士尼", "上海博物馆", "上海动物园",
+}
+SUBURBAN_CROWD_KEYWORDS = {
+    "松江", "松江区", "嘉定", "嘉定区", "青浦", "青浦区", "奉贤", "奉贤区",
+    "金山", "金山区", "崇明", "崇明区", "临港", "南汇", "宝山", "宝山区",
+    "郊野", "佘山", "朱家角", "枫泾", "海湾", "滴水湖",
+}
+
+def infer_crowd_context(structured_plan: dict, state: Optional[AgentState] = None) -> dict:
+    """根据最终路线和锚点生成通用人流量提示，供前端 Tips 展示。
+
+    这不是实时客流接口；它是基于上海常识、区域类型和周末场景的低风险提示。
+    如以后接入实时热力/排队 API，只需要替换这里，不需要改前端结构。
+    """
+    structured_plan = structured_plan or {}
+    state = state or {}
+    hard = structured_plan.get("hard_constraints") or {}
+    schedule = [item for item in (structured_plan.get("schedule") or []) if isinstance(item, dict)]
+    text = " ".join([
+        str(hard.get("planning_anchor") or ""),
+        str(hard.get("area_anchor") or ""),
+        str(hard.get("departure") or ""),
+        str(hard.get("destination") or ""),
+        " ".join(str(item.get("place") or "") for item in schedule),
+        " ".join(str(item.get("display_name") or "") for item in schedule),
+    ])
+    central_hits = [kw for kw in CENTER_CROWD_KEYWORDS if kw and kw in text]
+    suburban_hits = [kw for kw in SUBURBAN_CROWD_KEYWORDS if kw and kw in text]
+    weekend_like = any(token in str(hard.get("date") or "") for token in ["周六", "周日", "周末", "星期六", "星期日", "星期天"])
+    if central_hits:
+        level = "high"
+        label = "人流偏多"
+        base = "、".join(central_hits[:2])
+        tip = f"人流量提示：{base} 属于市中心/热门商圈或高热度景点，{('周末' if weekend_like else '出行当天')}可能人比较多；建议把拍照和排队型项目放在前半段，吃饭尽量提前到店或选择可预约地点。"
+    elif suburban_hits:
+        level = "low"
+        label = "人流相对少"
+        base = "、".join(suburban_hits[:2])
+        tip = f"人流量提示：路线主要在 {base} 等近郊/非核心商圈活动，通常比市中心更松弛；但郊区点位间距可能更大，建议优先确认末班车、打车可达性和返程时间。"
+    else:
+        level = "medium"
+        label = "人流中等"
+        tip = "人流量提示：这条路线不是纯热门景点堆叠，预计人流中等；如果遇到节假日或临时展览，仍建议提前看营业和排队情况。"
+    return {
+        "level": level,
+        "label": label,
+        "tip": tip,
+        "central_hits": central_hits[:5],
+        "suburban_hits": suburban_hits[:5],
+        "source": "local_rule_crowd_context",
+    }
+
+
+def schedule_item_need_booking(place: str) -> bool:
+    row = find_place_exact_for_route(place)
+    if row is None:
+        row = _find_place(place)
+    if row is None:
+        return False
+    try:
+        return bool(row.get("是否需要预约", False))
+    except Exception:
+        return False
+
+
+
+
+
+def generate_stop_narratives_with_llm(schedule: list[dict], hard: dict, crowd_context: dict) -> dict:
+    """Use the planning LLM once to create freer Xiaohongshu-style 150-char station copy."""
+    if os.getenv("ENABLE_LLM_STOP_NARRATIVES", "0") != "1" or llm is None:
+        return {}
+    simple_schedule = []
+    for idx, item in enumerate(schedule or [], start=1):
+        if not isinstance(item, dict):
+            continue
+        simple_schedule.append({
+            "index": idx,
+            "place": item.get("display_name") or item.get("place"),
+            "role": item.get("place_role") or place_role(str(item.get("place") or "")),
+            "purpose": item.get("purpose", ""),
+            "time": item.get("time", ""),
+            "duration_min": item.get("duration_min", 0),
+            "price_text": item.get("price_text", ""),
+        })
+    if not simple_schedule:
+        return {}
+    prompt = ChatPromptTemplate.from_template("""
+你是小红书本地生活路线文案作者。请为每个行程地点写一段自然、不模板化的中文描述。
+要求：
+1. 每段约130-180个中文字符，语气像真实攻略博主，不要写“这一站/路线说明/定位”等机械词。
+2. 每段必须结合地点名称、时间节奏、停留时长、价格或人流提示中的至少两项。
+3. 不要编造真实不存在的门票、活动或优惠；可写“按现场为准”。
+4. 输出严格 JSON，键为站点 index 字符串，值为文案字符串，不要 Markdown。
+
+路线约束：{hard}
+人流提示：{crowd}
+站点：{schedule}
+""")
+    try:
+        chain = prompt | llm | StrOutputParser()
+        raw = chain.invoke({
+            "hard": json.dumps(hard or {}, ensure_ascii=False),
+            "crowd": json.dumps(crowd_context or {}, ensure_ascii=False),
+            "schedule": json.dumps(simple_schedule, ensure_ascii=False),
+        })
+        cleaned = re.sub(r"```json|```", "", str(raw or "")).strip()
+        data = json.loads(cleaned)
+        result = {}
+        for key, value in (data or {}).items():
+            text = re.sub(r"\s+", " ", str(value or "")).strip()
+            if len(text) >= 60:
+                result[str(key)] = text[:260]
+        return result
+    except Exception as exc:
+        print(f"⚠️ 小红书站点文案 LLM 生成失败，使用兜底文案: {exc}")
+        return {}
+
+
+def stop_card_narrative(item: dict, index: int, total: int, crowd_context: dict) -> str:
+    """Generate Xiaohongshu-style stop copy around 120-180 Chinese chars for timeline cards."""
+    place = str(item.get("display_name") or item.get("place") or "这一站").strip()
+    purpose = str(item.get("purpose") or "行程地点").strip()
+    role = str(item.get("place_role") or "").strip()
+    name_hint = re.split(r"[（(]", place)[0].strip() or "这一站"
+    duration = _safe_int(item.get("duration_min"), 0)
+    duration_text = f"大概留{duration}分钟" if duration else "不用赶时间"
+    crowd_tail = "热门时段人会比较多，建议先拍照再慢慢体验，把排队和点单都尽量前置。" if crowd_context.get("level") == "high" else "整体节奏会更松弛，适合慢慢走、慢慢拍，不用像赶场打卡。"
+
+    if role == "meal":
+        copy = (
+            f"🍜 {name_hint}这一站安排吃饭回血很合适，{duration_text}，坐下来慢慢吃不会打乱后面的节奏。"
+            "前一段逛完刚好补充体力，点菜可以优先选招牌或套餐，预算更好控制。"
+            f"吃完再继续下一站，整条半日路线会舒服很多。{crowd_tail}"
+        )
+    elif role == "light_food":
+        copy = (
+            f"☕ {name_hint}适合当中途缓冲站，{duration_text}，点杯饮品坐一会儿，整个人会从赶路模式切回松弛模式。"
+            "这里不用安排太满，拍拍环境、整理照片、看一下下一段交通就很刚好。"
+            f"如果同行人想休息，这一站会特别加分。{crowd_tail}"
+        )
+    elif any(token in f"{place}{purpose}" for token in ["公园", "滨江", "散步", "citywalk", "步道", "草坪", "郊野", "森林"]):
+        copy = (
+            f"🌿 {name_hint}这一段主打轻松走走，{duration_text}，很适合边逛边拍，不需要每个点都打卡。"
+            "建议把手机拿出来随手记录路边细节，树影、街景、建筑和小店都容易出片。"
+            f"走累了就放慢速度，半日路线的氛围感会更自然。{crowd_tail}"
+        )
+    elif any(token in f"{place}{purpose}" for token in ["展", "美术馆", "博物馆", "艺术", "馆"]):
+        copy = (
+            f"🎨 {name_hint}这一站适合慢慢看，{duration_text}，不要只冲着打卡点走。"
+            "可以先看最感兴趣的展区，再留一点时间拍细节和纪念照，内容感会比走马观花强很多。"
+            f"如果遇到临展或热门展，建议现场先确认入场规则。{crowd_tail}"
+        )
+    elif index == 0:
+        copy = (
+            f"✨ 第一站从{name_hint}开始很顺，{duration_text}，先把今天的状态打开。"
+            "这一站不用安排得太紧，先熟悉周边环境、拍几张开场照，再按时间轴往后走。"
+            f"开头节奏稳一点，后面吃饭、逛街或看展都会更舒服。{crowd_tail}"
+        )
+    elif index == total - 1:
+        copy = (
+            f"🌙 最后一站放在{name_hint}收尾刚刚好，{duration_text}，逛完就可以自然返程。"
+            "这里适合把没拍完的照片补一补，也可以坐下休息一下再走，不会有突然结束的感觉。"
+            f"如果时间还有余量，可以顺路买点小吃或咖啡带走。{crowd_tail}"
+        )
+    else:
+        copy = (
+            f"🧭 {name_hint}负责把路线节奏衔接起来，{duration_text}，既能换个场景，也不会让行程显得太散。"
+            "这一站建议抓住一个核心体验就好，不用把周边全部走完。"
+            f"按时间轴推进会更轻松，也能给后面的交通和休息留出空间。{crowd_tail}"
+        )
+    if len(copy) < 120:
+        copy += " 建议把这一站当作路线里的节奏点，按现场状态灵活停留，不用为了打卡把时间卡得太死。"
+    return copy[:300]
+
+def build_route_overview_copy(structured_plan: dict, state: Optional[AgentState] = None) -> str:
+    """One Xiaohongshu-style overview shown above the Itinerary timeline."""
+    structured_plan = structured_plan or {}
+    hard = structured_plan.get("hard_constraints") or {}
+    schedule = [item for item in (structured_plan.get("schedule") or []) if isinstance(item, dict)]
+    collected = (state or {}).get("collected_info") or {}
+    people = parse_people_count(hard.get("num_people") or collected.get("num_people"), None) or 1
+    departure_raw = hard.get("departure") or collected.get("departure") or ""
+    departure = clean_anchor_for_display(departure_raw)
+    if not bool(hard.get("departure_explicit") or collected.get("_departure_explicit")):
+        departure = ""
+    anchor = clean_anchor_for_display(
+        hard.get("overview_anchor")
+        or hard.get("destination")
+        or collected.get("fixed_destination")
+        or collected.get("location")
+        or hard.get("area_anchor")
+        or collected.get("area_anchor")
+        or hard.get("planning_anchor")
+        or (schedule[0].get("place") if schedule else "")
+    ) or "上海"
+    budget = str(
+        hard.get("budget_estimate_text")
+        or (hard.get("budget_estimate") or {}).get("text")
+        or "预算待定"
+    ).strip()
+    date_text = str(hard.get("date") or "本周末").strip()
+    time_period = str(hard.get("time_period") or "半日").strip()
+    stops = len(schedule)
+    start_part = f"{people}人从{departure}出发，" if departure else f"{people}人的"
+    return (
+        f"✨ {start_part}围绕{anchor}安排的{date_text}{time_period}路线来啦！"
+        f"{budget}，{stops or 3}个点按时间轴走就行，适合不想做攻略直接照着逛～"
+    )
+
+
+def enrich_structured_plan_ui_fields(structured_plan: dict, state: Optional[AgentState] = None) -> dict:
+    """给前端补充展示字段：人流提示、预约策略、每站叙事。
+
+    这些字段只增强 UI，不改变原有 route / coupon / reservation 核心能力。
+    """
+    structured_plan = dict(structured_plan or {})
+    schedule = [dict(item) for item in (structured_plan.get("schedule") or []) if isinstance(item, dict)]
+    crowd_context = infer_crowd_context({**structured_plan, "schedule": schedule}, state)
+    hard_for_budget = dict(structured_plan.get("hard_constraints") or {})
+    budget_estimate = estimate_schedule_budget(schedule, hard_for_budget.get("num_people") or (state or {}).get("collected_info", {}).get("num_people"), hard_for_budget.get("budget", ""))
+    generated_narratives = generate_stop_narratives_with_llm(schedule, hard_for_budget, crowd_context)
+    collected = (state or {}).get("collected_info") or {}
+    latest_anchor = clean_anchor_for_display(
+        collected.get("fixed_destination")
+        or hard_for_budget.get("destination")
+        or collected.get("location")
+        or collected.get("area_anchor")
+        or hard_for_budget.get("area_anchor")
+        or hard_for_budget.get("planning_anchor")
+        or (schedule[0].get("place") if schedule else "")
+    )
+    if latest_anchor:
+        hard_for_budget["overview_anchor"] = latest_anchor
+    interests = hard_for_budget.get("interests") or collected.get("interests") or []
+    pace = hard_for_budget.get("pace") or collected.get("pace") or "Balanced"
+    hard_for_budget["interests"] = interests
+    hard_for_budget["pace"] = pace
+    has_reservable = False
+    for idx, item in enumerate(schedule):
+        place = str(item.get("place") or "").strip()
+        need_booking = schedule_item_need_booking(place)
+        item["need_booking"] = bool(need_booking)
+        has_reservable = has_reservable or bool(need_booking)
+        item["crowd_hint"] = crowd_context.get("tip", "")
+        gen_text = generated_narratives.get(str(idx + 1)) or generated_narratives.get(str(idx))
+        item["narrative"] = gen_text or stop_card_narrative(item, idx, len(schedule), crowd_context)
+        schedule[idx] = item
+    structured_plan["schedule"] = schedule
+    structured_plan["budget_estimate"] = budget_estimate
+    structured_plan["route_overview_copy"] = build_route_overview_copy({**structured_plan, "schedule": schedule, "hard_constraints": {**hard_for_budget, "budget_estimate_text": budget_estimate.get("text"), "budget_estimate": budget_estimate}}, state)
+    structured_plan["crowd_context"] = crowd_context
+    structured_plan["crowd_tip"] = crowd_context.get("tip", "")
+    structured_plan["interest_match_notes"] = build_interest_match_notes(interests, schedule)
+    structured_plan["pace_note"] = build_pace_note(pace, len(schedule))
+    structured_plan["has_reservable_places"] = bool(has_reservable)
+    structured_plan["reservation_prompt_policy"] = "show" if has_reservable else "hide"
+    hard = dict(structured_plan.get("hard_constraints") or {})
+    hard["requested_budget"] = hard.get("budget") or budget_estimate.get("requested_budget", "")
+    hard["budget_estimate"] = budget_estimate
+    hard["budget_estimate_text"] = budget_estimate.get("text") or "预算待核验"
+    hard["budget"] = hard["budget_estimate_text"]
+    hard["route_overview_copy"] = structured_plan.get("route_overview_copy", "")
+    hard["overview_anchor"] = hard_for_budget.get("overview_anchor", "")
+    hard["interests"] = interests
+    hard["pace"] = pace
+    hard["interest_match_notes"] = structured_plan.get("interest_match_notes", [])
+    hard["pace_note"] = structured_plan.get("pace_note", "")
+    hard["crowd_context"] = crowd_context
+    hard["has_reservable_places"] = bool(has_reservable)
+    hard["reservation_prompt_policy"] = structured_plan["reservation_prompt_policy"]
+    structured_plan["hard_constraints"] = hard
+    return structured_plan
 
 
 def build_structured_plan(state: AgentState) -> AgentState:
@@ -5190,13 +6763,50 @@ def build_structured_plan(state: AgentState) -> AgentState:
         route_logic_mode = "fixed_start_destination"
     elif anchor_mode == "destination":
         route_logic_mode = "single_anchor_destination"
+    elif anchor_mode in {"area", "nearby"}:
+        route_logic_mode = "nearby_area_anchor"
     elif departure_explicit:
         route_logic_mode = "single_anchor_departure"
     else:
         route_logic_mode = "open_default"
+    area_anchor_mode = anchor_mode in {"area", "nearby"}
     departure_only_mode = bool(collected.get("_departure_explicit")) and not is_destination_anchor_intent(intent,
-                                                                                                          collected)
-    if departure_only_mode:
+                                                                                                          collected) and not area_anchor_mode
+    if area_anchor_mode:
+        raw_places = []
+        route_plan_candidates = vary_candidates(
+            extract_meal_candidates(route_plan),
+            planning_context,
+            "route_plan_area_anchor",
+        )
+        local_pool_places = nearby_existing_places_from_local_pool(
+            anchor_name,
+            [anchor_name],
+            planning_context,
+            limit=min_route_stops,
+        )
+        raw_places.extend(local_pool_places)
+        route_plan_places = []
+        if len(raw_places) < min_route_stops:
+            route_plan_places = nearby_route_plan_places(
+                anchor_name,
+                route_plan_candidates,
+                raw_places + [anchor_name],
+                limit=max(0, min_route_stops - len(raw_places)),
+            )
+            raw_places.extend(route_plan_places)
+        amap_places = []
+        if len(raw_places) < min_route_stops and sync_amap_complement_enabled():
+            needed = max(0, min_route_stops - len(raw_places))
+            amap_places = find_nearby_complement_places(anchor_name, raw_places + [anchor_name], planning_context, limit=needed)
+            raw_places.extend(amap_places[:needed])
+        structure_anchor_note = (
+            f"用户表达的是“{anchor_name}”附近/区域需求；本次只把它作为搜索锚点，"
+            "最终路线必须由周边具体小地点组成，不把该区域名直接塞进 schedule。"
+        )
+        if local_pool_places or route_plan_places or amap_places:
+            structure_anchor_note += f" 已找到候选：{'、'.join(local_pool_places + route_plan_places + amap_places)}。"
+    elif departure_only_mode:
         raw_places = unique_preserve_order(list(locked_places))
         route_plan_candidates = vary_candidates(
             extract_meal_candidates(route_plan),
@@ -5326,6 +6936,11 @@ def build_structured_plan(state: AgentState) -> AgentState:
                 f"用户只明确出发地“{anchor_name}”；本次把它作为单点锚点，围绕它生成附近游玩路线。"
                 f"{structure_anchor_note}"
             )
+        elif route_logic_mode == "nearby_area_anchor":
+            structure_anchor_note = (
+                f"用户明确的是“{anchor_name}”附近/片区；系统围绕它找具体 POI，锚点本身不作为行程站点。"
+                f"{structure_anchor_note}"
+            )
         else:
             structure_anchor_note = (
                 f"已按默认锚点“{anchor_name or '上海人民广场'}”生成附近候选；"
@@ -5431,8 +7046,36 @@ def build_structured_plan(state: AgentState) -> AgentState:
 
     places, final_food_notes = final_sanitize_route_places(places, state, intent)
     structure_notes.extend(final_food_notes)
+    if area_anchor_mode and anchor_name:
+        before_anchor_filter = list(places)
+        places = [p for p in places if not is_area_anchor_schedule_self(p, anchor_name)]
+        if len(before_anchor_filter) != len(places):
+            structure_notes.append(f"已从最终路线中移除区域/附近锚点“{anchor_name}”，只保留周边具体地点。")
+        if len(places) < min_route_stops:
+            places, area_refill_notes = ensure_minimum_route_places(
+                places, state, intent, anchor_name, anchor_mode, min_route_stops, max_route_stops
+            )
+            places = [p for p in places if not is_area_anchor_schedule_self(p, anchor_name)]
+            structure_notes.extend(area_refill_notes)
+        if not places:
+            # Last resort for nearby intent: use concrete local POIs that contain the anchor word,
+            # but never the bare anchor itself. This prevents “待确认地点” for inputs like “迪士尼周围”.
+            anchor_key = normalize_place_text(anchor_name)
+            concrete = []
+            for _, row in _df.iterrows():
+                name = str(row.get("placeName", "") or "").strip()
+                if not name or is_area_anchor_schedule_self(name, anchor_name):
+                    continue
+                if anchor_key and anchor_key in normalize_place_text(name):
+                    concrete.append(name)
+                if len(concrete) >= min_route_stops:
+                    break
+            if concrete:
+                places = concrete[:max_route_stops]
+                structure_notes.append(f"附近锚点“{anchor_name}”周边候选不足，已使用地点表中带该锚点的具体 POI：{'、'.join(places)}。")
+
     route_places_for_schedule = places[:max_route_stops]
-    slots = build_schedule_slots(collected, intent, max(1, len(route_places_for_schedule)))
+    slots = build_schedule_slots(collected, intent, max(1, len(route_places_for_schedule)), route_places_for_schedule)
     schedule = []
     for index, place in enumerate(route_places_for_schedule):
         role = place_role(place)
@@ -5443,8 +7086,12 @@ def build_structured_plan(state: AgentState) -> AgentState:
         else:
             purpose = "顺路游玩/散步体验" if index else "核心游玩"
         price_detail = place_price_detail(place)
+        duration_profile = place_duration_profile(place)
         schedule.append({
             "time": slots[min(index, len(slots) - 1)],
+            "duration_min": duration_minutes_from_slot(slots[min(index, len(slots) - 1)]),
+            "duration_category": duration_profile.get("category", "general"),
+            "duration_reason": duration_profile.get("reason", "已按地点类型动态分配停留时间。"),
             "place": place,
             "place_role": role,
             "purpose": purpose,
@@ -5459,34 +7106,36 @@ def build_structured_plan(state: AgentState) -> AgentState:
             "place_role": "unknown",
             "purpose": "当前没有找到可核验地点，需要用户放宽条件或检查高德 API",
         })
+    schedule, availability_events, availability_notes = apply_schedule_availability_checks(schedule, state, intent)
+    if availability_notes:
+        structure_notes.extend(availability_notes)
+    exception_events = unique_preserve_order(list(exception_events) + [
+        e for e in availability_events if e.get("display_level") == "warning"
+    ])
     schedule_places = [item["place"] for item in schedule]
     places = unique_preserve_order(schedule_places)
-    effective_departure = collected.get("departure") or intent.get("departure")
+    effective_departure = clean_anchor_for_display(collected.get("departure") or intent.get("departure") or "")
+    if not bool(collected.get("_departure_explicit")):
+        effective_departure = ""
     if anchor_mode == "destination" and not bool(collected.get("_departure_explicit")):
-        effective_departure = anchor_name or (places[0] if places else "")
+        route_start_anchor = anchor_name or (places[0] if places else "")
         structure_notes.append(
-            f"用户只明确目的地，未明确出发地；系统以目的地“{effective_departure}”作为路线起点，不再使用默认市中心出发地。"
+            f"用户只明确目的地，未明确出发地；系统以目的地“{route_start_anchor}”作为周边路线锚点，不在文案中伪造出发地。"
         )
     adjustment_conflicts = detect_adjustment_conflicts(places, state, intent)
     if adjustment_conflicts:
         structure_notes.extend(adjustment_conflicts)
-
-    requested_budget_text = normalize_budget_text(collected.get("budget") or intent.get("budget"), "人均200元以内")
-    budget_estimate = estimate_schedule_budget(
-        schedule,
-        collected.get("num_people") or intent.get("num_people"),
-        requested_budget_text,
-    )
 
     route_logic_validation = {
         "ok": not adjustment_conflicts,
         "notes": structure_notes,
         "adjustment_conflicts": adjustment_conflicts,
         "exception_events": exception_events,
+        "availability_events": availability_events,
         "rules": [
             "structured_plan.schedule 是最终文案唯一主路线",
             "同一条 4-6 小时路线最多安排一顿正餐",
-            "最终 schedule 前会再次清理连续正餐和连续咖啡/甜品/轻食",
+            "最终 schedule 前会再次清理连续正餐、连续咖啡/甜品/轻食以及连续同类型活动点",
             "允许正餐后接散步/咖啡/轻量体验",
             "高德 POI 真实检索到的附近地点可以进入 structured_plan",
             "快捷按钮必须改动 structured_plan，而不是只改文案",
@@ -5500,7 +7149,6 @@ def build_structured_plan(state: AgentState) -> AgentState:
         "places": places,
         "schedule": schedule,
         "route_logic_validation": route_logic_validation,
-        "budget_estimate": budget_estimate,
         "hard_constraints": {
             "departure": effective_departure,
             "num_people": parse_people_count(collected.get("num_people") or intent.get("num_people"), None),
@@ -5509,14 +7157,14 @@ def build_structured_plan(state: AgentState) -> AgentState:
             "start_time": collected.get("start_time") or intent.get("start_time"),
             "weather": weather_info.get("weather") or collected.get("weather") or intent.get("weather"),
             "weather_reference": weather_info.get("summary", ""),
-            "requested_budget": requested_budget_text,
-            "budget_estimate": budget_estimate,
-            "budget_estimate_text": budget_estimate.get("text", "预算待核验"),
-            "budget": budget_estimate.get("text", requested_budget_text),
+            "budget": collected.get("budget") or intent.get("budget"),
             "duration_hours": intent.get("duration_hours"),
             "transport_mode": collected.get("transport_mode") or intent.get("transport_mode") or "公交地铁",
             "planning_anchor": anchor_name,
             "planning_anchor_mode": anchor_mode,
+            "area_anchor": collected.get("area_anchor") or intent.get("area_anchor"),
+            "area_anchor_mode": collected.get("area_anchor_mode") or intent.get("area_anchor_mode"),
+            "exclude_anchor_from_schedule": bool(collected.get("exclude_anchor_from_schedule") or intent.get("exclude_anchor_from_schedule")),
             "route_logic_mode": route_logic_mode,
             "min_route_stops": min_route_stops,
             "max_route_stops": max_route_stops,
@@ -5536,9 +7184,11 @@ def build_structured_plan(state: AgentState) -> AgentState:
             "coupon_summary": (coupon_info or {}).get("summary", ""),
             "weather_info": weather_info.get("summary", ""),
         },
+        "availability_events": availability_events,
         "notes": {
             "exception": state.get("exception"),
             "exception_events": exception_events,
+            "availability_events": availability_events,
             "adjustment_conflicts": adjustment_conflicts,
             "explicit_place_note": intent.get("explicit_place_note"),
             "resolved_location_note": intent.get("resolved_location_note"),
@@ -5549,13 +7199,21 @@ def build_structured_plan(state: AgentState) -> AgentState:
             "团购券只写 coupon_summary 明确列出的内容",
             "距离和交通只写 route_distance_info 支持的信息",
             "不得写 structured_plan.schedule 以外的地点作为主路线",
-            "不得安排连续两顿正餐或连续两家同类正餐店",
+            "不得安排连续两顿正餐、连续两家同类正餐店或连续两个同类型活动点",
+            "区域/附近锚点只用于检索周边 POI，不直接渲染成路线站点",
+            "每站时间按地点类型动态分配，不平均切分",
+            "余位/排队/替换原因必须通过 availability_events 暴露给前端",
         ],
     }
+    structured = enrich_structured_plan_ui_fields(structured, state)
     print("🧩 结构化方案已完整生成:")
     print(json.dumps(structured, ensure_ascii=False, indent=2))
     return {**state, "structured_plan": structured}
 
+
+
+
+# fast_plan_for_api_timeout 已移除：不再为了 30 秒目标强制生成简化方案。
 
 def validate_generated_plan(plan: str, state: AgentState, coupon_info: dict) -> dict:
     """Product-level rule checks: harder constraints than RAGAS retrieval metrics."""
@@ -5610,6 +7268,9 @@ def validate_generated_plan(plan: str, state: AgentState, coupon_info: dict) -> 
         if place_role(schedule_places[idx]) == "light_food" and place_role(schedule_places[idx + 1]) == "light_food":
             issues.append(
                 f"structured_plan 中存在连续咖啡/甜品/轻食：{schedule_places[idx]} -> {schedule_places[idx + 1]}")
+        type_reason = adjacent_same_type_conflict(schedule_places[idx + 1], schedule_places[idx])
+        if type_reason:
+            issues.append(f"structured_plan 中存在连续同类型地点：{type_reason}")
 
     coupon_items = (coupon_info or {}).get("items") or []
     invalid_coupon_places = [
@@ -5755,7 +7416,7 @@ def render_fast_plan_text(state: AgentState, structured_plan: dict, coupon_info:
     schedule = (structured_plan or {}).get("schedule", []) or []
     weather_ref = hard.get("weather_reference") or ((state.get("weather_info") or {}).get("summary")) or "天气待出行前核验"
     num_people = hard.get("num_people") or collected.get("num_people") or "未知"
-    budget = normalize_budget_text(hard.get("budget") or collected.get("budget"), "预算待定")
+    budget = hard.get("budget") or collected.get("budget") or "预算待定"
     departure = hard.get("departure") or collected.get("departure") or "出发地未知"
     date_text = hard.get("date") or collected.get("date") or "本周末"
     transport_mode = hard.get("transport_mode") or collected.get("transport_mode") or "公交地铁"
@@ -5823,9 +7484,21 @@ def render_fast_plan_text(state: AgentState, structured_plan: dict, coupon_info:
     lines.extend([
         f"费用与团购：{coupon_summary}",
         "整体体感：不是那种硬排满的打卡表，而是能走、能停、能吃，也能根据体力临时微调的路线。",
-        "出发前建议再核验营业时间、余位和实时交通；想换近一点、换便宜一点、换室内、优先有团购或少走路，直接继续说就行。",
     ])
+    if structured_plan.get("has_reservable_places"):
+        lines.append("出发前建议再核验营业时间、余位和实时交通；路线里有需要预约的地点，前端会只在对应站点显示预订入口。想换近一点、换便宜一点、换室内、优先有团购或少走路，直接继续说就行。")
+    else:
+        lines.append("出发前建议再核验营业时间、余位和实时交通；本路线没有检测到必须预约的地点，所以不额外提示预订。想换近一点、换便宜一点、换室内、优先有团购或少走路，直接继续说就行。")
     return "\n".join(lines).strip()
+
+def has_blocking_distance_conflict(structured_plan: dict) -> bool:
+    """Distance is reference-only now, so normal rendering is never blocked by a fixed km rule."""
+    return False
+
+
+def build_distance_conflict_plan(state: AgentState, structured_plan: dict) -> str:
+    """Backward-compatible fallback; normally unused because distance no longer blocks rendering."""
+    return render_structured_plan_text(state, structured_plan)
 
 
 def result_formatter(state: AgentState) -> AgentState:
@@ -5841,6 +7514,7 @@ def result_formatter(state: AgentState) -> AgentState:
     )
     if structured_plan.get("schedule"):
         structured_plan["schedule"] = enrich_schedule_addresses(structured_plan.get("schedule") or [])
+        structured_plan = enrich_structured_plan_ui_fields(structured_plan, state)
     structured_plan_json = json.dumps(structured_plan, ensure_ascii=False, indent=2)
     weather_info = state.get("weather_info") or {}
     weather_reference = weather_info.get("summary") or "未查询到实时/预报天气，按用户输入天气偏好或默认天气处理。"
@@ -5962,7 +7636,7 @@ def result_formatter(state: AgentState) -> AgentState:
         "start_time": collected.get("start_time") or "未指定",
         "weather": weather_info.get("weather") or collected.get("weather", "晴天"),
         "weather_reference": truncate_text(weather_reference, 500),
-        "budget": normalize_budget_text(collected.get("budget"), "适中"),
+        "budget": collected.get("budget", "适中"),
         "rag_context": truncate_text(state.get("rag_context", "暂无参考案例"), 1200),
         "attraction_info": truncate_text(state.get("attraction_info", ""), 450),
         "ticket_info": truncate_text(state.get("ticket_info", ""), 450),
