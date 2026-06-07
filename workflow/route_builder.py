@@ -1,0 +1,87 @@
+"""Route candidate, anchor, schedule, and structured-plan builders."""
+
+from __future__ import annotations
+
+from . import legacy
+from .pure_utils import unique_preserve_order
+
+
+__all__ = [
+    "unique_preserve_order",
+    "route_variant_seed",
+    "vary_candidates",
+    "significant_place_tokens",
+    "place_matches_text",
+    "find_place_exact_for_route",
+    "place_role",
+    "same_food_brand",
+    "is_food_place_role",
+    "route_place_category",
+    "adjacent_same_type_conflict",
+    "is_type_repeat_exempt_place",
+    "repeated_subtype_conflict",
+    "normalized_route_category",
+    "route_has_meal",
+    "candidate_food_conflict",
+    "can_append_food_safe",
+    "append_food_safe_route_places",
+    "final_sanitize_route_places",
+    "structured_plan_fast_mode",
+    "sync_amap_complement_enabled",
+    "default_route_anchor_for_generation",
+    "prefetch_ordered_step_geofence_cache",
+    "geofence_cached_places",
+    "geofence_cache_has_keyword",
+    "route_stop_bounds",
+    "append_unique_route_places",
+    "replaced_destination_key_set",
+    "is_replaced_destination_place",
+    "filter_replaced_destinations_from_places",
+    "locked_route_place_keys",
+    "is_locked_route_place",
+    "preserve_route_anchors",
+    "soft_optimize_route_order",
+    "fallback_complement_places_from_local_table",
+    "ensure_minimum_route_places",
+    "find_nearby_complement_places",
+    "search_spec_for_activity_keyword",
+    "find_requested_keyword_complement_places",
+    "nearby_existing_places_from_local_pool",
+    "nearby_route_plan_places",
+    "sanitize_structured_places",
+    "candidate_rows_for_role",
+    "choose_best_replacement",
+    "find_and_persist_nearby_replacement",
+    "emergency_route_search_specs",
+    "find_emergency_amap_place_near",
+    "rebuild_schedule_for_places",
+    "schedule_place_names",
+    "anchor_radius_violations",
+    "route_needs_emergency_rebuild",
+    "force_rebuild_route_with_amap",
+    "apply_quick_adjustment_to_places",
+    "detect_adjustment_conflicts",
+    "route_distance_between_places",
+    "straight_line_distance_m",
+    "place_distance_from_anchor_m",
+    "route_cluster_anchor_for_constraints",
+    "replace_place_near_anchor",
+    "enforce_destination_radius_constraint",
+    "enforce_adjacent_distance_limit",
+    "rebuild_schedule_with_places",
+    "attach_route_segments_to_structured_plan",
+    "repair_structured_plan_distance_violations",
+    "enforce_route_segments_after_amap",
+    "build_structured_plan",
+    "complete_plan_if_needed",
+    "enrich_structured_plan_ui_fields",
+    "resolved_core_place_for_schedule",
+    "route_distance_planner",
+    "enrich_new_places",
+]
+
+
+def __getattr__(name: str):
+    if name in __all__:
+        return legacy.get(name)
+    raise AttributeError(name)

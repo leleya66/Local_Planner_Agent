@@ -1,0 +1,2281 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>上海周末出行规划助手</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@tabler/icons-webfont@latest/dist/tabler-icons.min.css">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+  <style>
+
+    *{box-sizing:border-box;margin:0;padding:0}
+    :root{--bg:#F7F6FC;--card:#fff;--ink:#2C2C2A;--muted:#888780;--soft:#B4B2A9;--line:#DED9F3;--purple:#7F77DD;--purple2:#534AB7;--deep:#3C3489;--blue:#378ADD;--pink:#D4537E;--orange:#D85A30;--yellow:#BA7517;--green:#1D9E75;--good:#0F6E56;--shadow:0 14px 38px rgba(83,74,183,.08);font-family:Inter,"Microsoft YaHei",system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+    html,body{height:100%;overflow:hidden;background:var(--bg);color:var(--ink)}button,input,select{font:inherit}button{cursor:pointer}
+    .page{height:100vh;display:grid;grid-template-columns:280px minmax(0,1fr);position:relative;overflow:hidden;background:#F7F6FC}
+    .orb1{position:absolute;top:-180px;right:-180px;width:620px;height:620px;border-radius:50%;background:conic-gradient(from 200deg,#FAC775,#F0997B,#ED93B1,#AFA9EC,#85B7EB,#5DCAA5,#FAC775);opacity:.14;z-index:0;filter:blur(70px);pointer-events:none}.orb2{position:absolute;bottom:-200px;left:30px;width:440px;height:440px;border-radius:50%;background:conic-gradient(from 0deg,#85B7EB,#AFA9EC,#ED93B1);opacity:.10;z-index:0;filter:blur(60px);pointer-events:none}
+    .sidebar{position:relative;z-index:2;display:flex;flex-direction:column;background:rgba(255,255,255,.84);border-right:1px solid rgba(220,215,245,.7);height:100vh;overflow:hidden}.sidebar-header{padding:20px 18px 14px;display:flex;align-items:center;gap:12px;border-bottom:1px solid rgba(220,215,245,.5);flex-shrink:0}.logo-blob{width:34px;height:34px;border-radius:11px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#7F77DD;color:#fff}.brand{font-size:15px;font-weight:600;color:#2C2C2A}.brand-sub{font-size:12px;color:#B4B2A9;margin-top:1px}.new-btn{margin:12px 12px 8px;padding:10px 14px;border-radius:13px;border:1px dashed rgba(127,119,221,.4);background:transparent;color:#534AB7;font-size:13px;display:flex;align-items:center;justify-content:center;gap:6px;font-weight:600;flex-shrink:0}.new-btn:hover{background:rgba(127,119,221,.06)}.history{flex:1;overflow-y:auto;padding:4px 10px 10px;display:flex;flex-direction:column;gap:3px}.h-sep{font-size:10px;color:#B4B2A9;padding:8px 4px 4px;letter-spacing:.05em;font-weight:600}.h-item{padding:10px 12px;border-radius:11px;cursor:pointer;border:1px solid transparent;position:relative;background:transparent;text-align:left;color:inherit}.h-item:hover,.h-item.active{background:rgba(127,119,221,.08);border-color:rgba(175,169,236,.48)}.h-dot{width:7px;height:7px;border-radius:50%;position:absolute;left:12px;top:18px}.h-title{font-size:13px;font-weight:600;color:#2C2C2A;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.h-preview,.h-time{font-size:11px;color:#B4B2A9;margin-top:2px;padding-left:16px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.h-time{font-size:10px;color:#D3D1C7}
+    .main{position:relative;z-index:2;display:flex;flex-direction:column;height:100vh;overflow:hidden}.topbar{flex-shrink:0;padding:14px 28px 12px;border-bottom:1px solid rgba(220,215,245,.5);display:flex;align-items:center;justify-content:space-between;background:rgba(255,255,255,.72);position:relative;z-index:10}.route-head{display:flex;align-items:center;gap:12px;min-width:0}.route-icon{width:38px;height:38px;border-radius:12px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#EEEDFE;color:#7F77DD}.topbar-title{font-size:16px;font-weight:600;color:#2C2C2A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:580px}.topbar-meta{font-size:12px;color:#B4B2A9;margin-top:3px;display:flex;align-items:center;gap:14px;flex-wrap:wrap}.mc{display:inline-flex;align-items:center;gap:4px}.top-actions{display:flex;gap:8px}.t-btn{height:32px;padding:0 14px;border-radius:10px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.7);display:flex;align-items:center;gap:6px;color:#534AB7;font-size:13px;font-weight:600}.t-btn:hover{background:#EEEDFE}.t-btn-collab{background:#534AB7;color:#fff;border-color:#534AB7}.t-btn-collab:hover{background:#3C3489}
+    .content{flex:1;display:grid;grid-template-columns:minmax(0,1fr) 300px;overflow:hidden;min-height:0}.left-col{display:flex;flex-direction:column;overflow:hidden;min-height:0}.tab-bar{display:flex;gap:0;border-bottom:1px solid rgba(220,215,245,.5);flex-shrink:0;background:rgba(255,255,255,.6);padding:0 26px}.tab{font-size:13px;font-weight:600;padding:10px 16px;cursor:pointer;color:#B4B2A9;border-bottom:2px solid transparent;display:flex;align-items:center;gap:6px;transition:all .14s}.tab:hover,.tab.active{color:#534AB7}.tab.active{border-bottom-color:#7F77DD}.pane{flex:1;overflow-y:auto;padding:20px 26px;display:none;position:relative;overscroll-behavior:contain;scrollbar-gutter:stable}.pane.active{display:block}.conv-wrap{display:flex;flex-direction:column;gap:18px;min-height:100%;padding-bottom:8px}
+    .msg-human{display:flex;flex-direction:column;align-items:flex-end;gap:5px}.msg-human-inner{max-width:72%;background:#534AB7;color:#fff;border-radius:16px 16px 4px 16px;padding:11px 15px;font-size:13px;line-height:1.6;white-space:pre-wrap;box-shadow:0 8px 22px rgba(83,74,183,.10)}.msg-meta{font-size:10px;color:#B4B2A9;padding:0 4px}.msg-ai{display:flex;gap:10px;align-items:flex-start}.msg-ai-avatar{width:28px;height:28px;border-radius:50%;background:#EEEDFE;border:1.5px solid #AFA9EC;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;color:#7F77DD}.msg-ai-body{flex:1;display:flex;flex-direction:column;gap:8px;min-width:0}.msg-ai-bubble{background:rgba(255,255,255,.88);border:1px solid rgba(220,215,245,.7);border-radius:4px 16px 16px 16px;padding:12px 15px;font-size:13px;color:#2C2C2A;line-height:1.65;white-space:normal;box-shadow:var(--shadow)}.msg-ai-bubble strong{color:#534AB7}.rich-bubble{padding:12px 14px}.agent-thinking-inline{display:inline-flex;gap:4px;align-items:center;margin-right:8px}.agent-thinking-inline span{width:6px;height:6px;border-radius:50%;background:#AFA9EC;animation:bounce 1.2s infinite ease-in-out}.agent-thinking-inline span:nth-child(2){animation-delay:.2s}.agent-thinking-inline span:nth-child(3){animation-delay:.4s}@keyframes bounce{0%,80%,100%{transform:translateY(0)}40%{transform:translateY(-5px)}}
+    .inline-route{background:#F7F6FC;border:1px solid rgba(220,215,245,.8);border-radius:12px;padding:12px 14px;margin-top:8px}.inline-route-title{font-size:13px;font-weight:600;color:#2C2C2A;margin-bottom:10px;display:flex;align-items:center;gap:6px}.inline-route-title i{color:#7F77DD}.inline-stop{display:flex;align-items:center;gap:10px;padding:6px 0;border-bottom:1px solid rgba(220,215,245,.5)}.inline-stop:last-child{border-bottom:none}.inline-num{width:20px;height:20px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;color:#fff;flex-shrink:0}.inline-stop-name{font-size:13px;font-weight:600;color:#2C2C2A;flex:1}.inline-stop-time{font-size:11px;color:#B4B2A9}.inline-transit{font-size:11px;color:#B4B2A9;padding:3px 0 3px 30px;display:flex;align-items:center;gap:4px}.msg-actions{display:flex;gap:6px;flex-wrap:wrap}.msg-action-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.8);font-size:12px;color:#534AB7;font-weight:600;transition:all .13s}.msg-action-btn:hover{background:#EEEDFE;border-color:#AFA9EC}.msg-action-btn.primary{background:#534AB7;color:#fff;border-color:#534AB7}.msg-action-btn.primary:hover{background:#3C3489}.chat-route-title{font-size:14px;font-weight:700;color:#2C2C2A;display:flex;align-items:center;gap:7px;margin-bottom:8px}.chat-route-title i{color:#7F77DD}
+    .day-header{display:flex;align-items:center;gap:12px;margin-bottom:16px}.day-pill{font-size:12px;font-weight:600;padding:5px 14px;border-radius:999px;white-space:nowrap;background:rgba(255,255,255,.9);border:1px solid rgba(175,169,236,.4);color:#534AB7}.day-line{flex:1;height:1px;background:rgba(175,169,236,.18)}.ds{font-size:12px;color:#B4B2A9;display:flex;align-items:center;gap:3px}.empty{min-height:260px;border:1px dashed rgba(175,169,236,.65);background:rgba(255,255,255,.72);border-radius:16px;display:flex;align-items:center;justify-content:center;text-align:center;padding:32px;color:#888780;line-height:1.8}.stop-row{display:grid;grid-template-columns:46px 1fr}.spine{display:flex;flex-direction:column;align-items:center;padding-top:8px}.s-dot{width:13px;height:13px;border-radius:50%;border:2px solid;flex-shrink:0}.s-line{width:2px;flex:1;min-height:12px;margin:3px 0;opacity:.28}.sc-0{border-color:#BA7517;background:#FAEEDA}.sl-0{background:#BA7517}.sc-1{border-color:#D85A30;background:#FAECE7}.sl-1{background:#D85A30}.sc-2{border-color:#D4537E;background:#FBEAF0}.sl-2{background:#D4537E}.sc-3{border-color:#7F77DD;background:#EEEDFE}.sl-3{background:#7F77DD}.sc-4{border-color:#378ADD;background:#E6F1FB}.sl-4{background:#378ADD}.sc-5{border-color:#1D9E75;background:#E1F5EE}.sl-5{background:#1D9E75}.stop-card{border-radius:14px;padding:13px 15px;border:1px solid rgba(220,215,245,.7);background:rgba(255,255,255,.82);margin-bottom:10px;box-shadow:var(--shadow)}.stop-card:hover{background:#fff;border-color:rgba(175,169,236,.4)}.card-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}.card-left{flex:1;min-width:0}.tb{font-size:11px;font-weight:600;padding:2px 8px;border-radius:999px;display:inline-block;margin-bottom:5px;background:#EEEDFE;color:#3C3489;border:1px solid #AFA9EC}.tb-0{background:#FAEEDA;color:#633806;border-color:#FAC775}.tb-1{background:#FAECE7;color:#712B13;border-color:#F0997B}.tb-2{background:#FBEAF0;color:#72243E;border-color:#ED93B1}.tb-3{background:#EEEDFE;color:#3C3489;border-color:#AFA9EC}.tb-4{background:#E6F1FB;color:#123B62;border-color:#85B7EB}.tb-5{background:#E1F5EE;color:#0F6E56;border-color:#5DCAA5}.stop-name{font-size:15px;font-weight:700;color:#2C2C2A;margin-bottom:3px}.stop-desc{font-size:13px;color:#888780;line-height:1.55;white-space:pre-wrap}.tags{display:flex;gap:5px;margin-top:8px;flex-wrap:wrap}.tag{font-size:11px;padding:3px 8px;border-radius:999px;display:flex;align-items:center;gap:3px;background:rgba(247,246,252,.9);border:1px solid rgba(220,215,245,.8);color:#888780}.ptb{display:flex;flex-direction:column;align-items:center;gap:3px;flex-shrink:0;padding:6px 8px;border-radius:11px;border:1px solid;min-width:54px;border-color:#AFA9EC;background:#EEEDFE;color:#3C3489}.ptb i{font-size:20px}.ptb span{font-size:10px;font-weight:600;text-align:center;white-space:nowrap}.ptb-meal{border-color:#F0997B;background:#FAECE7;color:#712B13}.ptb-light_food{border-color:#AFA9EC;background:#EEEDFE;color:#3C3489}.ptb-park,.ptb-non_food{border-color:#97C459;background:#EAF3DE;color:#27500A}.task-row{display:flex;gap:6px;margin-top:9px;flex-wrap:wrap}.task-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 11px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.75);font-size:12px;color:#534AB7;font-weight:600}.task-btn:hover{background:#EEEDFE;border-color:#AFA9EC}.task-btn.static-task{cursor:default}.task-btn.static-task:hover{background:rgba(255,255,255,.75);border-color:rgba(220,215,245,.8)}.task-btn.done{color:#0F6E56;background:#E1F5EE;border-color:#5DCAA5}.task-btn.none{color:#9a8b79;background:#fff8ec;border-color:#ead7b6}.task-btn.coupon{color:#9b3c63;background:#FBEAF0;border-color:#ED93B1}.transit-block{display:grid;grid-template-columns:46px 1fr}.initial-transit-block{margin-top:-2px;margin-bottom:4px}.t-spine-wrap{display:flex;justify-content:center}.t-spine-line{width:2px;background:repeating-linear-gradient(to bottom,rgba(175,169,236,.35) 0 3px,transparent 3px 7px)}.transit-pill{display:inline-flex;align-items:center;gap:6px;padding:4px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.7);font-size:12px;color:#888780;position:relative}.transport-popup{position:absolute;top:calc(100% + 6px);left:0;background:#fff;border:1px solid rgba(220,215,245,.95);border-radius:13px;padding:9px;z-index:30;display:none;min-width:230px;box-shadow:var(--shadow)}.transport-popup.open{display:block}.tp-label{font-size:11px;font-weight:700;color:#B4B2A9;letter-spacing:.04em;margin-bottom:7px}.tp-opt{display:flex;align-items:center;gap:9px;padding:7px 8px;border-radius:9px;border:1px solid transparent;margin-bottom:3px}.tp-opt:hover,.tp-opt.sel{background:#EEEDFE;border-color:#AFA9EC}.map-section{margin-top:18px;padding-top:16px;border-top:1px solid rgba(175,169,236,.18)}.section-title{font-size:14px;font-weight:700;display:flex;align-items:center;gap:7px;margin-bottom:11px}.section-title i{color:#7F77DD}.map-wrap{border-radius:14px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.82);overflow:hidden;min-height:260px;display:flex;align-items:center;justify-content:center}.route-map-img{width:100%;min-height:260px;object-fit:contain;display:block}.map-placeholder{padding:32px;color:#888780;font-size:13px;text-align:center}.map-marker-list{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px;padding:0 8px 8px}.map-marker-chip{font-size:12px;padding:5px 9px;border-radius:999px;background:#fff;border:1px solid rgba(220,215,245,.82);color:#888780}.summary-card{display:none}.tip-card{padding:11px 13px;border-radius:12px;background:rgba(255,255,255,.85);border:1px solid rgba(220,215,245,.6);font-size:13px;color:#888780;line-height:1.65;white-space:normal;word-break:break-word;overflow-wrap:anywhere}.tip-card strong{color:#534AB7;font-weight:700}.right-panel{border-left:1px solid rgba(220,215,245,.5);padding:20px 18px;display:flex;flex-direction:column;gap:14px;background:rgba(255,255,255,.5);overflow-y:auto}.rp-label{font-size:10px;font-weight:700;color:#B4B2A9;letter-spacing:.05em;margin-bottom:8px}.rp-summary-grid{display:grid;grid-template-columns:1fr 1fr;gap:7px}.rp-sum-card,.rp-sum-card-wide{padding:11px 12px;border-radius:12px;background:rgba(255,255,255,.9);border:1px solid rgba(220,215,245,.6)}.rp-sum-card-wide{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between}.rp-sum-val{font-size:20px;font-weight:700;color:#2C2C2A}.rp-sum-lbl{font-size:11px;color:#B4B2A9;margin-top:2px}
+    .bottom-panel{flex-shrink:0;border-top:1px solid rgba(220,215,245,.5);background:rgba(255,255,255,.88);z-index:5}.prefs-strip{padding:9px 26px 6px;display:flex;align-items:center;gap:10px}.pref-dd{position:relative}.pref-trig,.quick-btn{height:28px;padding:0 11px;border-radius:999px;border:1px solid rgba(175,169,236,.45);background:rgba(255,255,255,.85);color:#534AB7;font-size:12px;font-weight:600;display:flex;align-items:center;gap:5px;white-space:nowrap}.pref-trig:hover,.quick-btn:hover,.quick-btn.selected{background:#EEEDFE;border-color:#AFA9EC}.pref-panel{position:absolute;bottom:calc(100% + 8px);left:0;background:#fff;border:1px solid rgba(220,215,245,.9);border-radius:15px;padding:13px;z-index:50;display:none;box-shadow:0 4px 20px rgba(83,74,183,.09)}.pref-panel.open{display:block}.pp-label{font-size:11px;font-weight:700;color:#B4B2A9;letter-spacing:.05em;margin-bottom:9px}.igrid{display:grid;grid-template-columns:repeat(5,1fr);gap:5px;width:370px}.int-chip,.pace-chip,.qa-chip{display:flex;flex-direction:column;align-items:center;gap:3px;padding:8px 4px 6px;border-radius:10px;border:1px solid rgba(220,215,245,.8);background:#F7F6FC;cursor:pointer;transition:all .13s}.int-chip:hover,.int-chip.on,.pace-chip.on,.qa-chip:hover{border-color:#AFA9EC;background:#EEEDFE}.int-chip i,.pace-chip i,.qa-chip i{font-size:17px;color:#B4B2A9}.int-chip.on i,.pace-chip.on i,.qa-chip:hover i{color:#534AB7}.int-chip span,.pace-chip span,.qa-chip span{font-size:11px;color:#888780;font-weight:600;text-align:center}.int-chip.on span,.pace-chip.on span,.qa-chip:hover span{color:#3C3489}.pace-row{display:flex;gap:5px;width:220px}.pace-chip{flex:1}.qa-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:5px;width:280px}.psep{width:1px;height:18px;background:rgba(175,169,236,.25);margin:0 2px}.cnt-badge{background:#AFA9EC;color:#fff;border-radius:999px;font-size:10px;padding:0 5px;margin-left:1px}.regen-btn{height:28px;padding:0 13px;border-radius:999px;border:none;background:#7F77DD;color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;gap:5px;white-space:nowrap;margin-left:auto}.regen-btn:hover{background:#534AB7}.input-row{padding:5px 26px 14px;display:flex;gap:9px;align-items:center}.group-label{display:flex;align-items:center;gap:6px;font-size:12px;color:#888780;white-space:nowrap}.chat-input-wrap{flex:1;display:flex;align-items:center;flex-wrap:wrap;border-radius:13px;border:1px solid rgba(220,215,245,.7);background:rgba(255,255,255,.88);padding:5px 8px;gap:5px;min-height:42px}.chat-input-wrap:focus-within{border-color:#AFA9EC;background:#fff}.active-tag{font-size:11px;font-weight:600;color:#7F77DD;background:#EEEDFE;padding:3px 8px;border-radius:999px;border:1px solid #AFA9EC;white-space:nowrap;display:inline-flex;align-items:center;gap:4px}.interest-tag{background:#fff;border-color:#AFA9EC;box-shadow:0 4px 12px rgba(83,74,183,.06);cursor:pointer}.interest-tag:hover{background:#EEEDFE}.interest-tag i{font-size:12px}.chat-input{flex:1;font-size:14px;padding:5px 6px;border:none;background:transparent;color:#2C2C2A;min-width:180px}.chat-input:focus{outline:none}.send-btn{height:42px;padding:0 18px;border-radius:12px;border:none;background:#7F77DD;display:flex;align-items:center;gap:6px;font-size:13px;font-weight:700;color:#fff;flex-shrink:0}.send-btn:hover{background:#534AB7}.send-btn:disabled{opacity:.55;cursor:not-allowed}.detail-modal{position:fixed;inset:0;background:rgba(35,31,54,.28);display:none;align-items:center;justify-content:center;z-index:80;padding:18px;overflow:hidden}.detail-modal.open{display:flex}.detail-box{width:min(620px,100%);max-height:calc(100vh - 36px);border-radius:14px;background:#fff;border:1px solid rgba(220,215,245,.95);box-shadow:0 24px 60px rgba(44,38,82,.18);padding:16px;display:flex;flex-direction:column;overflow:hidden}.detail-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:10px;flex-shrink:0}.detail-title{font-size:15px;font-weight:800}.detail-close{width:30px;height:30px;border-radius:9px;border:1px solid rgba(220,215,245,.9);background:#fff;color:#888780;flex-shrink:0}.detail-body{font-size:13px;line-height:1.7;color:#888780;white-space:pre-wrap;overflow-y:auto;max-height:calc(100vh - 112px);padding-right:4px;overscroll-behavior:contain}.detail-body::-webkit-scrollbar{width:8px}.detail-body::-webkit-scrollbar-thumb{background:rgba(127,119,221,.28);border-radius:999px}.mini-btn{margin-top:8px;border:none;background:#7F77DD;color:#fff;border-radius:9px;padding:7px 10px;font-size:12px;font-weight:800}.mini-btn:hover{background:#534AB7}.order-info-section-title{font-size:11px;font-weight:800;color:#B4B2A9;letter-spacing:.05em;margin:10px 0 7px}.order-info-card{border:1px solid rgba(220,215,245,.85);background:#fff;border-radius:12px;padding:10px 11px;margin-bottom:8px}.order-info-card.pending{background:#F7F6FC}.order-info-card-head{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;color:#534AB7;font-weight:800}.order-info-card-head small{font-size:10px;color:#B4B2A9;font-weight:600}.order-info-place{font-size:13px;color:#2C2C2A;font-weight:800;margin-top:6px}.order-info-message{font-size:12px;color:#888780;line-height:1.65;margin-top:5px}.order-info-empty{border:1px dashed rgba(175,169,236,.65);border-radius:12px;padding:14px;color:#888780;line-height:1.7;background:#F7F6FC}.order-info-summary{display:flex;align-items:flex-start;gap:9px;border-radius:13px;border:1px solid rgba(220,215,245,.82);background:linear-gradient(135deg,#fff,#F7F6FC);padding:9px 11px;margin:0 0 8px}.order-info-summary-icon{width:30px;height:30px;border-radius:10px;display:flex;align-items:center;justify-content:center;flex-shrink:0;background:#EEEDFE;color:#534AB7}.order-info-summary-title{font-size:13px;font-weight:900;color:#2C2C2A;line-height:1.3}.order-info-summary-sub{font-size:11px;color:#888780;line-height:1.45;margin-top:1px}.order-info-card.saved{position:relative;overflow:hidden;padding:10px 12px;border-radius:14px;background:linear-gradient(135deg,rgba(255,255,255,.98),rgba(247,246,252,.86));box-shadow:0 8px 20px rgba(83,74,183,.05);margin-bottom:7px}.order-info-card.saved:before{content:"";position:absolute;left:0;top:0;bottom:0;width:4px;background:#7F77DD}.order-info-card.saved.coupon:before{background:#5DCAA5}.order-info-card.saved.error:before{background:#D85A30}.order-info-status-pill{display:inline-flex;align-items:center;gap:4px;border-radius:999px;padding:2px 7px;font-size:10px;font-weight:900;border:1px solid rgba(93,202,165,.55);background:#E1F5EE;color:#0F6E56}.order-info-card.saved.error .order-info-status-pill{border-color:#F0997B;background:#FAECE7;color:#712B13}.order-info-place-row{display:flex;align-items:center;gap:8px;margin-top:7px}.order-info-place-icon{width:26px;height:26px;border-radius:9px;background:#EEEDFE;color:#534AB7;display:flex;align-items:center;justify-content:center;flex-shrink:0}.order-info-card.saved.coupon .order-info-place-icon{background:#E1F5EE;color:#0F6E56}.order-info-place-main{min-width:0}.order-info-card.saved.coupon .order-info-place-icon{background:#E1F5EE;color:#0F6E56}.order-info-place-main{min-width:0}.order-info-place-main .order-info-place{margin:0;line-height:1.28;font-size:13px}.order-info-kind-sub{font-size:10px;color:#B4B2A9;margin-top:1px}.order-info-kv-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px;margin-top:8px}.order-info-kv{border:1px solid rgba(220,215,245,.7);background:rgba(255,255,255,.78);border-radius:10px;padding:6px 8px;min-width:0}.order-info-kv-label{font-size:10px;color:#B4B2A9;font-weight:900;letter-spacing:.02em;line-height:1.25}.order-info-kv-value{font-size:12px;color:#2C2C2A;font-weight:700;margin-top:1px;line-height:1.35;word-break:break-word}.order-info-note{margin-top:8px;border-radius:10px;background:rgba(238,237,254,.55);border:1px solid rgba(175,169,236,.45);padding:7px 9px;font-size:12px;color:#66635d;line-height:1.55}.order-info-card.saved.coupon .order-info-note{background:rgba(225,245,238,.55);border-color:rgba(93,202,165,.45)}@media(max-width:640px){.order-info-kv-grid{grid-template-columns:1fr}}
+    @media(max-width:1000px){.page{grid-template-columns:1fr}.sidebar{display:none}.content{grid-template-columns:1fr}.right-panel{display:none}.top-actions{display:flex;gap:4px}.t-btn{width:30px;padding:0;justify-content:center;font-size:0}.t-btn i{font-size:15px}.topbar{align-items:flex-start;gap:12px}.pane{padding:16px 14px}.tab-bar{padding:0 14px}.prefs-strip{padding:8px 14px;overflow-x:auto}.input-row{padding:7px 14px 12px;display:grid;grid-template-columns:1fr auto}.chat-input-wrap{grid-column:1}.group-label{grid-column:1 / -1}.msg-human-inner{max-width:88%}}
+
+
+  /* Designer v2: approve flow + post-approval tasks */
+  .approve-bar{display:flex;gap:8px;align-items:center;padding:10px 14px;background:rgba(255,255,255,.92);border:1px solid rgba(220,215,245,.72);border-radius:12px;margin-top:10px;box-shadow:0 4px 14px rgba(83,74,183,.04)}
+  .approve-bar span{font-size:13px;color:#2C2C2A;flex:1;line-height:1.55}
+  .btn-approve{padding:7px 16px;border-radius:999px;border:none;background:#534AB7;color:#fff;font-size:12px;font-weight:600;cursor:pointer;display:flex;align-items:center;gap:5px;white-space:nowrap}
+  .btn-approve:hover{background:#3C3489}.btn-approve i{font-size:13px}
+  .btn-reject{padding:7px 14px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:transparent;color:#888780;font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap}
+  .btn-reject:hover{background:#F7F6FC;color:#534AB7}
+  .post-approve-task-section{display:none;margin-top:10px}.post-approve-task-section.open{display:block}
+  .task-section-label{font-size:11px;font-weight:700;color:#B4B2A9;letter-spacing:.05em;margin:10px 0 8px;text-transform:uppercase}
+  .task-cards{display:grid;grid-template-columns:1fr 1fr;gap:7px}
+  .task-card{padding:11px 13px;border-radius:13px;border:1px solid rgba(220,215,245,.7);background:rgba(255,255,255,.86);display:flex;flex-direction:column;gap:7px;min-width:0;transition:all .14s}
+  .task-card:hover{background:#fff;border-color:rgba(175,169,236,.45)}
+  .task-card-top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+  .task-icon{width:32px;height:32px;border-radius:9px;display:flex;align-items:center;justify-content:center;flex-shrink:0}.task-icon i{font-size:16px}
+  .ti-purple{background:#EEEDFE}.ti-purple i{color:#534AB7}.ti-orange{background:#FAECE7}.ti-orange i{color:#D85A30}.ti-teal{background:#E1F5EE}.ti-teal i{color:#0F6E56}.ti-amber{background:#FAEEDA}.ti-amber i{color:#854F0B}.ti-blue{background:#E6F1FB}.ti-blue i{color:#123B62}
+  .tsb{font-size:10px;padding:2px 7px;border-radius:999px;font-weight:600;white-space:nowrap}.tsb-ready{background:#E1F5EE;color:#0F6E56;border:1px solid #5DCAA5}.tsb-running{background:#FAEEDA;color:#633806;border:1px solid #FAC775}.tsb-done{background:#EEEDFE;color:#3C3489;border:1px solid #AFA9EC}
+  .task-name{font-size:13px;font-weight:600;color:#2C2C2A;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.task-meta{font-size:11px;color:#B4B2A9;line-height:1.45;min-height:16px}
+  .task-run-btn{width:100%;padding:6px 0;border-radius:9px;border:1px solid rgba(220,215,245,.8);background:transparent;font-size:12px;color:#534AB7;cursor:pointer;font-weight:600;display:flex;align-items:center;justify-content:center;gap:4px}
+  .task-run-btn:hover{background:#EEEDFE;border-color:#AFA9EC}.task-run-btn.done-btn{color:#0F6E56;border-color:#5DCAA5;background:#E1F5EE;cursor:default}.task-run-btn:disabled{opacity:.65;cursor:not-allowed}
+  .ma-actions{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.ma-btn{display:inline-flex;align-items:center;gap:5px;padding:5px 12px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.8);font-size:12px;color:#534AB7;cursor:pointer;font-weight:600}.ma-btn:hover{background:#EEEDFE;border-color:#AFA9EC}.ma-btn.primary{background:#534AB7;color:#fff;border-color:#534AB7}.ma-btn.primary:hover{background:#3C3489}
+  @media(max-width:760px){.task-cards{grid-template-columns:1fr}.approve-bar{align-items:flex-start;flex-wrap:wrap}.approve-bar span{flex-basis:100%}}
+
+
+  .route-overview{margin:0 0 16px;border-radius:16px;border:1px solid rgba(175,169,236,.62);background:linear-gradient(135deg,rgba(255,255,255,.96),rgba(238,237,254,.82));box-shadow:var(--shadow);padding:14px 16px;color:#2C2C2A;line-height:1.7;font-size:14px}.route-overview strong{color:#534AB7}.route-overview .overview-sub{margin-top:6px;color:#888780;font-size:12px;display:flex;gap:6px;flex-wrap:wrap}.overview-pill{display:inline-flex;align-items:center;gap:4px;border:1px solid rgba(175,169,236,.55);background:rgba(255,255,255,.78);border-radius:999px;padding:3px 9px}.overview-reasons{margin-top:9px;display:flex;flex-direction:column;gap:4px;font-size:12px;color:#66635d}.overview-reason{display:flex;gap:6px;align-items:flex-start}.overview-reason i{color:#7F77DD;margin-top:2px}.stop-narrative{font-size:13px;color:#2C2C2A;line-height:1.72;margin:6px 0 8px;white-space:pre-wrap}.stop-meta-chips{display:flex;gap:6px;flex-wrap:wrap;margin-top:8px}.meta-chip{display:inline-flex;align-items:center;gap:4px;border-radius:999px;border:1px solid rgba(220,215,245,.8);background:rgba(247,246,252,.92);color:#66635d;font-size:11px;font-weight:700;padding:4px 9px}.meta-chip.purpose{background:#EEEDFE;border-color:#AFA9EC;color:#3C3489}.meta-chip.price{background:#FFF8EC;border-color:#EAD7B6;color:#8A530B}.meta-chip.time{background:#E6F1FB;border-color:#85B7EB;color:#123B62}.meta-chip.status-ok{background:#E1F5EE;border-color:#5DCAA5;color:#0F6E56}.meta-chip.status-warn{background:#FFF8EC;border-color:#EAD7B6;color:#8A530B}.stop-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:10px}.stop-action-btn{height:30px;border-radius:999px;border:1px solid rgba(220,215,245,.85);background:#fff;color:#534AB7;font-size:12px;font-weight:800;padding:0 10px;display:inline-flex;align-items:center;gap:5px}.stop-action-btn:hover{background:#EEEDFE;border-color:#AFA9EC}.stop-action-btn.reserve-yes{border-color:#F0B783;background:#FFF8EC;color:#8A530B}.stop-action-btn.coupon-yes{border-color:#8DD9C0;background:#E1F5EE;color:#0F6E56}.address-line{margin-top:7px;font-size:12px;color:#888780;line-height:1.55}.side-tip-grid{display:flex;flex-direction:column;gap:8px}.tip-mini-title{font-size:12px;font-weight:700;color:#534AB7;margin-bottom:4px;display:flex;align-items:center;gap:5px}.tip-mini-body{font-size:12px;line-height:1.7;color:#888780;white-space:pre-line;word-break:break-word;overflow-wrap:anywhere}.rp-budget-breakdown{font-size:11px;color:#B4B2A9;text-align:right;line-height:1.7;max-width:128px}.task-empty-card{padding:12px 14px;border-radius:13px;border:1px dashed rgba(175,169,236,.75);background:rgba(255,255,255,.82);font-size:13px;color:#888780;line-height:1.65}.task-btn.task-btn.static-task:hover{background:#EEEDFE;border-color:#AFA9EC}
+
+  .section-title .back-chat-btn{margin-left:auto;border:1px solid rgba(220,215,245,.8);background:rgba(255,255,255,.82);color:#534AB7;border-radius:999px;padding:4px 10px;font-size:12px;font-weight:700;display:inline-flex;align-items:center;gap:4px}.section-title .back-chat-btn:hover{background:#EEEDFE;border-color:#AFA9EC}
+
+
+  .planning-progress-card{margin:8px 0 2px;background:#F7F6FC;border:1px solid rgba(220,215,245,.82);border-radius:14px;padding:12px 13px;box-shadow:none}.planning-progress-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:9px}.planning-progress-title{font-size:13px;font-weight:800;color:#534AB7;display:flex;align-items:center;gap:6px}.planning-progress-sub{font-size:11px;color:#888780;line-height:1.55}.planning-progress-list{display:flex;flex-direction:column;gap:7px}.planning-progress-step{display:grid;grid-template-columns:18px 1fr;gap:8px;align-items:flex-start;padding:8px 9px;border-radius:11px;border:1px solid rgba(220,215,245,.75);background:#fff;opacity:.92}.planning-progress-step.active{border-color:#AFA9EC;background:#EEEDFE}.planning-progress-step.done{border-color:rgba(93,202,165,.65);background:#F4FBF8}.progress-dot{width:16px;height:16px;border-radius:50%;display:flex;align-items:center;justify-content:center;margin-top:2px;border:1px solid #DAD5F3;color:#B4B2A9;font-size:10px;background:#fff}.planning-progress-step.active .progress-dot{background:#7F77DD;border-color:#7F77DD;color:#fff;animation:pulseDot 1s infinite ease-in-out}.planning-progress-step.done .progress-dot{background:#5DCAA5;border-color:#5DCAA5;color:#fff;animation:none}.progress-step-title{font-size:12px;font-weight:800;color:#3C3489;line-height:1.4}.progress-step-detail{font-size:12px;line-height:1.65;color:#66635d;white-space:pre-line;word-break:break-word;overflow-wrap:anywhere;margin-top:2px}.planning-progress-foot{font-size:11px;color:#B4B2A9;margin-top:8px;line-height:1.55}@keyframes pulseDot{0%,100%{transform:scale(1);opacity:1}50%{transform:scale(.78);opacity:.72}}
+  .planning-explain-card{margin:0 0 16px;border-radius:16px;border:1px solid rgba(220,215,245,.78);background:rgba(255,255,255,.88);box-shadow:var(--shadow);padding:13px 15px;color:#2C2C2A}.planning-explain-card.in-chat{margin:10px 0 4px;background:#F7F6FC;box-shadow:none}.planning-explain-card.in-chat .planning-step-list{grid-template-columns:1fr}.planning-explain-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}.planning-explain-title{font-size:13px;font-weight:800;color:#534AB7;display:flex;align-items:center;gap:6px}.planning-explain-sub{font-size:11px;color:#B4B2A9;line-height:1.55}.planning-step-list{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.planning-step{border:1px solid rgba(220,215,245,.72);background:#F7F6FC;border-radius:12px;padding:9px 10px}.planning-explain-card.in-chat .planning-step{background:#fff}.planning-step-title{font-size:12px;font-weight:800;color:#3C3489;margin-bottom:4px}.planning-step-detail{font-size:12px;line-height:1.65;color:#66635d;white-space:pre-line;word-break:break-word;overflow-wrap:anywhere}.planning-disclaimer{margin-top:8px;font-size:11px;color:#B4B2A9;line-height:1.55}@media(max-width:1000px){.planning-step-list{grid-template-columns:1fr}}
+  .constraint-card{margin:0 0 16px;border-radius:16px;border:1px solid rgba(55,138,221,.34);background:rgba(230,241,251,.62);box-shadow:var(--shadow);padding:13px 15px}.constraint-title{font-size:13px;font-weight:900;color:#123B62;display:flex;align-items:center;gap:6px}.constraint-sub{font-size:11px;color:#55708a;line-height:1.55;margin-top:4px}.constraint-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.constraint-item{border:1px solid rgba(133,183,235,.48);background:rgba(255,255,255,.84);border-radius:12px;padding:9px 10px}.constraint-item-title{font-size:12px;font-weight:900;color:#123B62;margin-bottom:4px}.constraint-item-body{font-size:12px;line-height:1.65;color:#66635d;white-space:pre-line;word-break:break-word;overflow-wrap:anywhere}@media(max-width:1000px){.constraint-grid{grid-template-columns:1fr}}
+  .group-consider-card{margin:0 0 16px;border-radius:16px;border:1px solid rgba(93,202,165,.55);background:rgba(225,245,238,.56);padding:13px 15px}.group-consider-title{font-size:13px;font-weight:900;color:#0F6E56;display:flex;align-items:center;gap:6px}.group-consider-sub{font-size:11px;color:#5f746d;margin-top:4px;line-height:1.55}.group-consider-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}.group-consider-item{border:1px solid rgba(93,202,165,.42);background:rgba(255,255,255,.82);border-radius:12px;padding:9px 10px}.group-consider-name{font-size:12px;font-weight:900;color:#0F6E56}.group-consider-pref,.group-consider-result{font-size:12px;line-height:1.6;color:#66635d;margin-top:4px}.group-consider-result{color:#35685a}@media(max-width:1000px){.group-consider-grid{grid-template-columns:1fr}}
+  .room-confirm-card{margin:0 0 16px;border-radius:16px;border:1px solid rgba(175,169,236,.72);background:rgba(238,237,254,.72);padding:13px 15px}.room-confirm-head{display:flex;align-items:center;justify-content:space-between;gap:10px}.room-confirm-title{font-size:13px;font-weight:900;color:#534AB7}.room-confirm-sub{font-size:12px;color:#66635d;line-height:1.6;margin-top:5px}.room-confirm-tags{display:flex;gap:6px;flex-wrap:wrap;margin-top:9px}.room-confirm-tag{border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;border:1px solid rgba(175,169,236,.6);background:#fff;color:#66635d}.room-confirm-tag.done{border-color:#5DCAA5;background:#E1F5EE;color:#0F6E56}.room-confirm-btn{border:none;border-radius:999px;padding:7px 13px;background:#534AB7;color:#fff;font-size:12px;font-weight:800;white-space:nowrap}.room-confirm-btn:disabled{opacity:.62}
+</style>
+<style>
+  .amap-route-map{width:100%;height:420px;min-height:320px}
+  .amap-route-shell{width:100%}
+  .amap-pin{width:24px;height:24px;border-radius:50%;background:#2F80ED;color:#fff;border:3px solid #fff;box-shadow:0 3px 10px rgba(47,128,237,.35);display:flex;align-items:center;justify-content:center;font-size:12px;font-weight:800}
+  .amap-place-label{padding:4px 8px;border-radius:999px;background:rgba(255,255,255,.92);border:1px solid rgba(47,128,237,.28);box-shadow:0 3px 10px rgba(0,0,0,.12);font-size:12px;font-weight:700;color:#222;white-space:nowrap}
+  @media (max-width:720px){.amap-route-map{height:340px;min-height:300px}.amap-place-label{font-size:11px;max-width:180px;overflow:hidden;text-overflow:ellipsis}}
+</style>
+</head>
+<body>
+
+<div class="page">
+  <div class="orb1"></div><div class="orb2"></div>
+  <aside class="sidebar">
+    <div class="sidebar-header">
+      <div class="logo-blob"><i class="ti ti-route"></i></div>
+      <div><div class="brand">路线规划助手</div><div class="brand-sub">上海周末出行助手</div></div>
+    </div>
+    <button class="new-btn" id="new-plan"><i class="ti ti-plus"></i> 新建方案</button>
+    <div class="history" id="history-list"></div>
+  </aside>
+  <main class="main">
+    <header class="topbar">
+      <div class="route-head">
+        <div class="route-icon"><i class="ti ti-map-pin"></i></div>
+        <div>
+          <div class="topbar-title" id="route-title">上海周末出行规划助手</div>
+          <div class="topbar-meta">
+            <span class="mc"><i class="ti ti-calendar"></i><span id="meta-date">等待规划</span></span>
+            <span class="mc"><i class="ti ti-map-pin"></i><span id="meta-stops">0 站</span></span>
+            <span class="mc"><i class="ti ti-clock"></i><span id="meta-duration">4-6 小时</span></span>
+            <span class="mc"><i class="ti ti-wallet"></i><span id="meta-budget">预算待定</span></span>
+          </div>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button class="t-btn" id="download-png-btn"><i class="ti ti-download"></i> 下载</button>
+        <button class="t-btn" id="share-btn"><i class="ti ti-share"></i> 分享</button>
+        <button class="t-btn t-btn-collab" id="collab-btn"><i class="ti ti-users"></i> 协作</button>
+      </div>
+    </header>
+    <section class="content">
+      <div class="left-col">
+        <div class="tab-bar"><div id="conversation-meta" style="display:none">当前会话</div>
+          <div class="tab active" id="tab-chat" onclick="switchTab('chat')"><i class="ti ti-message-2"></i> 对话</div>
+          <div class="tab" id="tab-route" onclick="switchTab('route')"><i class="ti ti-list-check"></i> 行程</div>
+        </div>
+        <div class="pane active" id="pane-chat">
+          <div class="conv-wrap" id="chat-log"></div>
+        </div>
+        <div class="pane" id="pane-route">
+          <div class="day-header">
+            <span class="day-pill" id="day-pill"><i class="ti ti-sun"></i> 输入需求后生成路线</span>
+            <div class="day-line"></div>
+            <span class="ds"><i class="ti ti-clock"></i><span id="day-duration">4-6 小时</span></span>
+            <span class="ds"><i class="ti ti-route"></i><span id="day-distance">距离待计算</span></span>
+          </div>
+          <div id="timeline"><div class="empty"><div><strong>先告诉我你的出行时间和同行人群。</strong><br>例如：周六下午2点，和爸妈三个人从嘉定出发，想室内轻松一点，人均200以内。<br>生成后这里会显示和聊天页一致的新版路线卡片。</div></div></div>
+          <div class="summary-card" id="summary-card"></div>
+          <div class="map-section" id="map-section" style="display:none">
+            <div class="section-title"><i class="ti ti-map-2"></i>路线地图 <button class="back-chat-btn" onclick="switchTab('chat')"><i class="ti ti-message-2"></i>返回聊天</button></div>
+            <div class="map-wrap" id="map-wrap"><div class="map-placeholder">路线小地图等待生成</div></div>
+          </div>
+          <div class="map-section" id="plan-section" style="display:none">
+            <div class="section-title"><i class="ti ti-notes"></i>方案文案</div>
+            <div class="tip-card" id="plan-text">最终小红书文案会显示在这里，时间轴会根据后端返回的结构化行程渲染。</div>
+          </div>
+        </div>
+      </div>
+      <aside class="right-panel">
+        <div>
+          <div class="rp-label">摘要</div>
+          <div class="rp-summary-grid">
+            <div class="rp-sum-card"><div class="rp-sum-val" id="rp-duration">4-6 小时</div><div class="rp-sum-lbl">时长</div></div>
+            <div class="rp-sum-card"><div class="rp-sum-val" id="rp-stops">0</div><div class="rp-sum-lbl">站点</div></div>
+            <div class="rp-sum-card-wide"><div><div class="rp-sum-val" id="rp-budget">待定</div><div class="rp-sum-lbl">预算</div></div><div class="rp-budget-breakdown" id="rp-budget-breakdown">来自本次方案<br>随生成结果更新</div></div>
+          </div>
+        </div>
+        <div>
+          <div class="rp-label">提醒</div>
+          <div class="side-tip-grid" id="tips-grid">
+            <div class="tip-card"><div class="tip-mini-title">👥 人流</div><div class="tip-mini-body" id="tip-crowds">生成方案后显示人流量建议。</div></div>
+            <div class="tip-card"><div class="tip-mini-title">🌤️ 天气</div><div class="tip-mini-body" id="tip-weather">天气会在方案生成后自动显示。</div></div>
+            <div class="tip-card"><div class="tip-mini-title">⏱️ 排队建议</div><div class="tip-mini-body" id="tip-queue">生成方案后给出排队/余位建议。</div></div>
+            <div class="tip-card"><div class="tip-mini-title">💰 预算</div><div class="tip-mini-body" id="tip-budget">预算会随本次路线更新。</div></div>
+          </div>
+        </div>
+      </aside>
+    </section>
+    <footer class="bottom-panel">
+      <div class="prefs-strip">
+        <div class="pref-dd" id="dd-i">
+          <button class="pref-trig" id="btn-i" onclick="toggleDD('i')"><i class="ti ti-sparkles"></i> 兴趣 <span class="cnt-badge" id="i-cnt">0</span><i class="ti ti-chevron-down"></i></button>
+          <div class="pref-panel" id="panel-i">
+            <div class="pp-label">选择兴趣</div>
+            <div class="igrid" id="igrid">
+              <div class="int-chip" data-icon="ti-tools-kitchen-2" onclick="togInt(this)"><i class="ti ti-tools-kitchen-2"></i><span>美食</span></div>
+              <div class="int-chip" data-icon="ti-building-castle" onclick="togInt(this)"><i class="ti ti-building-castle"></i><span>文化</span></div>
+              <div class="int-chip" data-icon="ti-shopping-bag" onclick="togInt(this)"><i class="ti ti-shopping-bag"></i><span>购物</span></div>
+              <div class="int-chip" data-icon="ti-palette" onclick="togInt(this)"><i class="ti ti-palette"></i><span>艺术</span></div>
+              <div class="int-chip" data-icon="ti-trees" onclick="togInt(this)"><i class="ti ti-trees"></i><span>自然</span></div>
+              <div class="int-chip" data-icon="ti-camera" onclick="togInt(this)"><i class="ti ti-camera"></i><span>拍照</span></div>
+              <div class="int-chip" data-icon="ti-ticket" onclick="togInt(this)"><i class="ti ti-ticket"></i><span>展览</span></div>
+              <div class="int-chip" data-icon="ti-cup" onclick="togInt(this)"><i class="ti ti-cup"></i><span>咖啡</span></div>
+              <div class="int-chip" data-icon="ti-bike" onclick="togInt(this)"><i class="ti ti-bike"></i><span>散步</span></div>
+              <div class="int-chip" data-icon="ti-users" onclick="togInt(this)"><i class="ti ti-users"></i><span>亲子</span></div>
+            </div>
+          </div>
+        </div>
+        <div class="psep"></div>
+        <div class="pref-dd" id="dd-q">
+          <button class="pref-trig" id="btn-q" onclick="toggleDD('q')"><i class="ti ti-adjustments-horizontal"></i> 快捷调整 <i class="ti ti-chevron-down"></i></button>
+          <div class="pref-panel" id="panel-q"><div class="pp-label">调整行程</div><div class="qa-grid">
+            <button class="quick-btn" onclick="sendQuick('换近一点',this)"><i class="ti ti-arrows-minimize"></i>换近一点</button>
+            <button class="quick-btn" onclick="sendQuick('换便宜一点',this)"><i class="ti ti-pig-money"></i>换便宜</button>
+            <button class="quick-btn" onclick="sendQuick('换成室内',this)"><i class="ti ti-building"></i>换室内</button>
+            <button class="quick-btn" onclick="sendQuick('优先有团购',this)"><i class="ti ti-ticket"></i>优先团购</button>
+            <button class="quick-btn" onclick="sendQuick('少走路',this)"><i class="ti ti-walk"></i>少走路</button>
+            <button class="quick-btn" onclick="sendQuick('换条路线',this)"><i class="ti ti-refresh"></i>换路线</button>
+          </div></div>
+        </div>
+        <button class="regen-btn" id="order-info-btn" onclick="showOrderInfoModal()"><i class="ti ti-receipt"></i> 订单信息</button>
+      </div>
+      <div class="input-row">
+        <span class="group-label" id="group-label-text"></span>
+        <div class="chat-input-wrap" id="chat-input-wrap"><span class="active-tag base-tag">#上海</span><span class="active-tag base-tag">#周末</span><input class="chat-input" id="user-input" type="text" placeholder="输入需求或修改意见，例如：周六下午2点，和朋友两个人从松江出发，想吃火锅，优先有团购"></div>
+        <button class="send-btn" id="send-btn"><i class="ti ti-send"></i> 发送</button>
+      </div>
+    </footer>
+  </main>
+</div>
+<div class="detail-modal" id="detail-modal" onclick="closeDetailModal(event)"><div class="detail-box"><div class="detail-head"><div class="detail-title" id="detail-title">详情</div><button class="detail-close" onclick="closeDetailModal(event)"><i class="ti ti-x"></i></button></div><div class="detail-body" id="detail-body"></div></div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+<script>
+  // 前端主脚本：
+  // - 单人模式：把输入发到 /plan，缺失字段由后端默认值补齐，直接渲染 plan_ready。
+  // - 多人模式：通过 room_id 加入协作房间，群聊消息走 /events_stream 实时同步。
+  // - 方案本体以后端 structured_plan.schedule 为准；final_plan 只作为文案补充。
+  const API_BASE = window.location.protocol === "file:" ? "http://127.0.0.1:8041" : "";
+  let currentSessionId = null;
+  const initialParams = new URLSearchParams(location.search);
+  let sharedRoomId = initialParams.get("room") || "";
+  const sharedSessionId = initialParams.get("session_id") || "";
+  let collaborationActive = Boolean(sharedRoomId || sharedSessionId);
+  let pollTimer = null;
+  let pollIntervalMs = 0;
+  let lastEventId = 0;
+  // 多人协作同步状态：lastEventId 防重复拉取，renderedRoomEventIds 防同一事件重复渲染。
+  const renderedRoomEventIds = new Set();
+  let sharedPlanningProgressState = null;
+  let sharedPlanEventSource = null;
+  let sharedPlanSnapshotTimer = null;
+  let sharedResultWatchFailures = 0;
+  let amapLoaderPromise = null;
+  let routeAmapInstance = null;
+  function parseLngLat(value){
+    if(Array.isArray(value) && value.length >= 2){
+      const lng = Number(value[0]), lat = Number(value[1]);
+      return Number.isFinite(lng) && Number.isFinite(lat) ? [lng, lat] : null;
+    }
+    if(value && typeof value === "object"){
+      return parseLngLat(value.coord || value.location || value.lnglat || [value.lng, value.lat]);
+    }
+    const text = String(value || "").trim();
+    if(!text) return null;
+    const parts = text.split(",").map(v=>Number(v.trim()));
+    return parts.length >= 2 && Number.isFinite(parts[0]) && Number.isFinite(parts[1]) ? [parts[0], parts[1]] : null;
+  }
+  function routeMarkerCoord(marker){
+    return parseLngLat(marker && (marker.coord || marker.location || marker.amap_location || marker.lnglat));
+  }
+  function routePathPoints(routeMap){
+    const rawPath = Array.isArray(routeMap && routeMap.path_points) ? routeMap.path_points : [];
+    const path = rawPath.map(parseLngLat).filter(Boolean);
+    if(path.length >= 2) return path;
+    return ((routeMap && routeMap.markers) || []).map(routeMarkerCoord).filter(Boolean);
+  }
+  function amapKey(){
+    return (latestData && latestData.frontend_meta && latestData.frontend_meta.amap_js_key) || "";
+  }
+  function loadAmapJs(){
+    if(window.AMap) return Promise.resolve(window.AMap);
+    if(amapLoaderPromise) return amapLoaderPromise;
+    const key = amapKey();
+    if(!key) return Promise.reject(new Error("未配置高德 JS API Key"));
+    amapLoaderPromise = new Promise((resolve,reject)=>{
+      const script = document.createElement("script");
+      script.src = `https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}&plugin=AMap.Scale,AMap.ToolBar`;
+      script.async = true;
+      script.onload = () => window.AMap ? resolve(window.AMap) : reject(new Error("高德 JS API 加载失败"));
+      script.onerror = () => reject(new Error("高德 JS API 脚本加载失败"));
+      document.head.appendChild(script);
+    });
+    return amapLoaderPromise;
+  }
+  async function renderDynamicAmap(routeMap, markerList){
+    const wrap = document.createElement("div");
+    wrap.className = "amap-route-shell";
+    const mapDiv = document.createElement("div");
+    mapDiv.className = "amap-route-map";
+    wrap.appendChild(mapDiv);
+    if(markerList) wrap.insertAdjacentHTML("beforeend", markerList);
+    $("map-wrap").innerHTML = "";
+    $("map-wrap").appendChild(wrap);
+    const AMap = await loadAmapJs();
+    const markers = ((routeMap && routeMap.markers) || []).map((m,idx)=>({ ...m, _coord: routeMarkerCoord(m), _index: m.index || idx + 1 })).filter(m=>m._coord);
+    const path = routePathPoints(routeMap);
+    const center = parseLngLat(routeMap && routeMap.center) || (path[0] || (markers[0] && markers[0]._coord)) || [121.4737,31.2304];
+    if(routeAmapInstance){
+      routeAmapInstance.destroy();
+      routeAmapInstance = null;
+    }
+    routeAmapInstance = new AMap.Map(mapDiv, {
+      center,
+      zoom: Number(routeMap && routeMap.zoom) || 13,
+      resizeEnable: true,
+      viewMode: "2D",
+    });
+    try{ routeAmapInstance.addControl(new AMap.Scale()); routeAmapInstance.addControl(new AMap.ToolBar({position:"RT"})); }catch(_){}
+    const overlays = [];
+    if(path.length >= 2){
+      const polyline = new AMap.Polyline({
+        path,
+        strokeColor: "#2F80ED",
+        strokeWeight: 6,
+        strokeOpacity: 0.92,
+        lineJoin: "round",
+        lineCap: "round",
+        showDir: true,
+      });
+      routeAmapInstance.add(polyline);
+      overlays.push(polyline);
+    }
+    markers.forEach((m)=>{
+      const marker = new AMap.Marker({
+        position: m._coord,
+        anchor: "center",
+        content: `<div class="amap-pin">${esc(m._index)}</div>`,
+      });
+      const label = new AMap.Marker({
+        position: m._coord,
+        offset: new AMap.Pixel(14, -34),
+        anchor: "bottom-left",
+        content: `<div class="amap-place-label">${esc(m._index)}. ${esc(m.place || "")}</div>`,
+      });
+      routeAmapInstance.add([marker, label]);
+      overlays.push(marker, label);
+    });
+    if(overlays.length){
+      routeAmapInstance.setFitView(overlays, false, [42,42,42,42]);
+    }
+  }
+  let roomEventSource = null;
+  let roomEventReconnectTimer = null;
+  let sharedPlanningAckShown = false;
+  let roomSpeaker = localStorage.getItem("localmate_room_speaker") || "";
+  let roomParticipants = [];
+  let roomJoined = false;
+  let latestData = null;
+  // 多人全员确认后自动展开任务卡片；按 plan_revision 去重，避免 SSE/轮询重复滚动。
+  let roomPostTasksOpenedForRevision = 0;
+  let awaitingRequiredInfo = false;
+  const clientId = localStorage.getItem("localmate_client_id") || `client_${Math.random().toString(36).slice(2,10)}`;
+  localStorage.setItem("localmate_client_id", clientId);
+  if (sharedRoomId) currentSessionId = `room:${sharedRoomId.replace(/[^a-zA-Z0-9_-]/g,"").slice(0,40)}`;
+  else if (sharedSessionId) currentSessionId = sharedSessionId;
+
+  const $ = (id) => document.getElementById(id);
+  const inputEl = $("user-input");
+  const sendBtn = $("send-btn");
+  const HISTORY_KEY = "localmate_agent4_history_v1";
+  const WELCOME_TEXT = "Hi，我是你的上海周末路线规划助手 🗺️ 告诉我什么时候、和谁/几个人、从哪里出发、想去哪儿或哪个区域附近逛、交通方式、人均消费和其他要求，我会生成一版可确认执行的半日路线。";
+  let currentMessages = [];
+  let orderInfoItems = [];
+
+  // 所有用户输入/后端文本进入 HTML 前都要转义，避免把聊天内容当 HTML 执行。
+  function esc(s){return String(s ?? "").replace(/[&<>"']/g,(m)=>({"&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;"}[m]));}
+  function cleanInventoryText(value){
+    return String(value ?? "")
+      .replace(/当前\s*mock\s*状态显示/g,"当前余位状态显示")
+      .replace(/mock\s*状态显示/g,"余位状态显示")
+      .replace(/mock\s*数据/g,"当前数据")
+      .replace(/mock\s*表/g,"当前地点库")
+      .replace(/mock\s*库/g,"当前地点库")
+      .replace(/未接入\s*mock\s*余位库存/g,"暂未接入实时余位");
+  }
+  function safeReadHistory(){
+    try{return JSON.parse(localStorage.getItem(HISTORY_KEY) || "[]").filter(Boolean);}
+    catch(_){return [];}
+  }
+  function writeHistory(items){
+    localStorage.setItem(HISTORY_KEY, JSON.stringify(items.slice(0,20)));
+  }
+  function formatHistoryTime(ts){
+    const date = ts ? new Date(ts) : new Date();
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate()-1);
+    const sameDay = (a,b)=>a.getFullYear()===b.getFullYear() && a.getMonth()===b.getMonth() && a.getDate()===b.getDate();
+    const hhmm = date.toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"});
+    if(sameDay(date,today))return `今天 ${hhmm}`;
+    if(sameDay(date,yesterday))return `昨天 ${hhmm}`;
+    return `${date.getMonth()+1}/${date.getDate()} ${hhmm}`;
+  }
+  function ensureCurrentSession(){
+    if(!currentSessionId) currentSessionId = `local:${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}`;
+    return currentSessionId;
+  }
+  function currentTitle(){
+    const firstUser = currentMessages.find(m=>m.role==="user");
+    if(firstUser && firstUser.text)return firstUser.text.slice(0,22);
+    return $("route-title").textContent || "当前会话";
+  }
+  function saveHistory(){
+    const id = ensureCurrentSession();
+    const existing = safeReadHistory().filter(item=>item.id !== id);
+    const lastMsg = currentMessages[currentMessages.length-1];
+    const record = {
+      id,
+      title: currentTitle(),
+      preview: lastMsg ? lastMsg.text.slice(0,34) : "等待输入出行需求",
+      updatedAt: Date.now(),
+      messages: currentMessages.slice(-80),
+      latestData
+    };
+    writeHistory([record, ...existing]);
+    renderHistoryList();
+  updateInterestCount();
+  renderInterestTags();
+  }
+  function renderHistoryList(){
+    const items = safeReadHistory();
+    const today = [];
+    const yesterday = [];
+    const older = [];
+    const now = new Date();
+    const y = new Date();
+    y.setDate(now.getDate()-1);
+    const sameDay = (ts,d)=>{const x=new Date(ts);return x.getFullYear()===d.getFullYear() && x.getMonth()===d.getMonth() && x.getDate()===d.getDate();};
+    items.forEach(item=>{
+      if(sameDay(item.updatedAt,now))today.push(item);
+      else if(sameDay(item.updatedAt,y))yesterday.push(item);
+      else older.push(item);
+    });
+    const group = (label,arr)=>arr.length ? `<div class="h-sep">${label}</div>` + arr.map(item=>`
+      <button class="h-item ${item.id===currentSessionId ? "active" : ""}" data-history-id="${esc(item.id)}">
+        <div class="h-dot" style="background:#7F77DD"></div>
+        <div class="h-title">${esc(item.title || "未命名会话")}</div>
+        <div class="h-preview">${esc(item.preview || "无摘要")}</div>
+        <div class="h-time">${esc(formatHistoryTime(item.updatedAt))}</div>
+      </button>`).join("") : "";
+    $("history-list").innerHTML = group("今天",today) + group("昨天",yesterday) + group("更早",older) || `<div class="h-sep">今天</div><div class="h-item active"><div class="h-dot" style="background:#7F77DD"></div><div class="h-title">当前会话</div><div class="h-preview">等待输入出行需求</div><div class="h-time">刚刚</div></div>`;
+  }
+  function loadHistory(id){
+    const item = safeReadHistory().find(x=>x.id===id);
+    if(!item)return;
+    currentSessionId = item.id;
+    latestData = item.latestData || null;
+    currentMessages = Array.isArray(item.messages) && item.messages.length ? item.messages : [{role:"bot",text:WELCOME_TEXT}];
+    $("chat-log").innerHTML = "";
+    currentMessages.forEach(m=>appendMsgNode(m.role,m.text));
+    if(latestData) renderTimeline(latestData, {skipHistory:true});
+    refreshConversationMeta(item.title || "历史会话");
+    renderHistoryList();
+    inputEl.focus();
+  }
+  function appendMsgNode(role,text){
+    const wrap=document.createElement("div");
+    const time = new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit"});
+    if(role === "user"){
+      wrap.className="msg-human";
+      wrap.innerHTML=`<div class="msg-human-inner">${esc(text||"")}</div><div class="msg-meta">${esc(time)}</div>`;
+    }else{
+      const isThinking = String(text||"").includes("正在规划中");
+      wrap.className=`msg-ai ${isThinking ? "thinking-message" : ""}`.trim();
+      wrap.innerHTML=`<div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+        <div class="msg-ai-body">
+          <div class="msg-ai-bubble">${isThinking ? `<div class="agent-thinking-inline"><span></span><span></span><span></span></div><span>正在规划中...</span>` : esc(text||"").replace(/\n/g,"<br>")}</div>
+          <div class="msg-meta">${esc(time)}</div>
+        </div>`;
+    }
+    $("chat-log").appendChild(wrap);
+    $("chat-log").scrollTop=$("chat-log").scrollHeight;
+    return wrap;
+  }
+  function appendRichBotNode(html, extraClass=""){
+    const wrap=document.createElement("div");
+    wrap.className=`msg-ai ${extraClass}`.trim();
+    wrap.innerHTML=`<div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+      <div class="msg-ai-body">
+        <div class="msg-ai-bubble rich-bubble">${html || ""}</div>
+        <div class="msg-actions">
+          <button class="msg-action-btn primary" onclick="switchTab('route')"><i class="ti ti-list-check"></i> 查看完整行程</button>
+          <button class="msg-action-btn" onclick="openRouteMap()"><i class="ti ti-map-2"></i> 查看地图</button>
+        </div>
+      </div>`;
+    $("chat-log").appendChild(wrap);
+    $("chat-log").scrollTop=$("chat-log").scrollHeight;
+    return wrap;
+  }
+  function buildGroupConsiderationsHtml(data){
+    // 多人模式方案生成后，展示“每位群友需求如何被考虑”的结果。
+    const items = (data && (data.group_considerations || data.structured_plan?.group_considerations)) || [];
+    if(!Array.isArray(items) || !items.length)return "";
+    return `<div class="group-consider-card">
+      <div class="group-consider-title"><i class="ti ti-users-group"></i>多人需求考量</div>
+      <div class="group-consider-sub">助手已按群聊发生顺序汇总每位成员的表达，并在路线筛选中逐项考虑。</div>
+      <div class="group-consider-grid">${items.map(item=>`<div class="group-consider-item">
+        <div class="group-consider-name">${esc(item.member || "群友")}</div>
+        <div class="group-consider-pref"><strong>表达：</strong>${esc(item.preference || "未补充")}</div>
+        <div class="group-consider-result"><strong>处理：</strong>${esc(item.consideration || "已纳入路线权衡。")}</div>
+      </div>`).join("")}</div>
+    </div>`;
+  }
+  function roomConfirmationData(data){
+    // 把后端 room_confirmation 归一化，供确认卡片统一渲染。
+    const raw=(data && data.room_confirmation) || {};
+    const confirmed=Array.isArray(raw.confirmed)?raw.confirmed:[];
+    const pending=Array.isArray(raw.pending_speakers)?raw.pending_speakers:roomParticipants.filter(item=>!confirmed.some(done=>done.client_id===item.client_id)).map(item=>item.speaker);
+    const total=Math.max(Number(raw.total_count)||0,roomParticipants.length,confirmed.length+pending.length);
+    return {...raw,plan_revision:Number(raw.plan_revision??data?.plan_revision)||0,confirmed,confirmed_count:confirmed.length,total_count:total,pending_speakers:pending,all_confirmed:total>0&&confirmed.length===total&&pending.length===0};
+  }
+  function mergePlanPayloadIntoLatestData(data){
+    // 确认事件可能只是一条轻量状态，也可能在“全员确认”时带完整任务数据。
+    // 这里按字段合并，确保多人确认后能拿到 coupon_info / reservation_options 来渲染任务卡片。
+    if(!data || !latestData)return;
+    [
+      "plan", "final_plan", "distance_info", "structured_plan", "validation_report",
+      "feasibility_report", "coupon_info", "reservation_options", "route_map",
+      "frontend_meta", "group_considerations", "exception_events"
+    ].forEach(key=>{
+      if(Object.prototype.hasOwnProperty.call(data,key) && data[key] !== undefined){
+        latestData[key] = data[key];
+      }
+    });
+    if(Object.prototype.hasOwnProperty.call(data,"plan_revision")){
+      latestData.plan_revision = Number(data.plan_revision) || latestData.plan_revision || 0;
+    }
+  }
+  function applyRoomSnapshot(data){
+    // 从 /session、/events、SSE 返回里同步房间成员和确认状态。
+    if(!data)return;
+    if(latestData)mergePlanPayloadIntoLatestData(data);
+    if(Array.isArray(data.participants)){roomParticipants=data.participants;updateRoomUi();}
+    if(data.room_confirmation&&latestData)renderRoomConfirmationState(data.room_confirmation);
+  }
+  function buildRoomConfirmationHtml(data){
+    // 方案确认卡片：每个人独立确认，只有全部成员确认后才显示 all_confirmed。
+    if(!sharedRoomId)return "";
+    const info=roomConfirmationData(data);
+    const confirmed=Array.isArray(info.confirmed)?info.confirmed:[];
+    const mine=confirmed.some(item=>item.client_id===clientId);
+    const pending=Array.isArray(info.pending_speakers)?info.pending_speakers:[];
+    const tags=confirmed.map(item=>`<span class="room-confirm-tag done"><i class="ti ti-check"></i> ${esc(item.speaker||"群友")} 已确认</span>`).join("");
+    const pendingTags=pending.map(name=>`<span class="room-confirm-tag">${esc(name)} 待确认</span>`).join("");
+    return `<div class="room-confirm-card">
+      <div class="room-confirm-head">
+        <div>
+          <div class="room-confirm-title"><i class="ti ti-users-check"></i> 第 ${esc(info.plan_revision||1)} 版方案确认</div>
+          <div class="room-confirm-sub">${info.all_confirmed?"所有群友均已确认，可以继续执行后续任务。":`已确认 ${esc(info.confirmed_count||0)}/${esc(info.total_count||roomParticipants.length)}。群友可逐个确认；有修改意见时先在群聊补充，再发送 @Agent 开始规划。`}</div>
+        </div>
+        <button class="room-confirm-btn" onclick="confirmCurrentRoomPlan(this)" ${mine||info.all_confirmed?"disabled":""}>${mine?"已确认":"确认此方案"}</button>
+      </div>
+      <div class="room-confirm-tags">${tags}${pendingTags}</div>
+    </div>`;
+  }
+  function openRoomPostApprovalTasks(){
+    // 多人模式：只有全员确认当前版本后，才自动展开与单人确认一致的后续任务卡片。
+    if(!sharedRoomId || !latestData)return;
+    const info = roomConfirmationData(latestData);
+    if(!info.all_confirmed)return;
+    const revision = Number(info.plan_revision) || Number(latestData.plan_revision) || 0;
+    let hasSection = false;
+    document.querySelectorAll(".route-result-msg .post-approve-task-section").forEach(section=>{
+      section.classList.add("open");
+      hasSection = true;
+    });
+    // 兼容旧消息：如果本地聊天气泡还没有任务卡片，就补插入一份。
+    if(!hasSection){
+      document.querySelectorAll(".route-result-msg .msg-ai-body").forEach(body=>{
+        body.insertAdjacentHTML("beforeend", buildTaskCardsHtml(latestData,{open:true}));
+      });
+    }
+    if(roomPostTasksOpenedForRevision !== revision){
+      roomPostTasksOpenedForRevision = revision;
+      const sections = document.querySelectorAll(".route-result-msg .post-approve-task-section.open");
+      const last = sections[sections.length - 1];
+      if(last)setTimeout(()=>last.scrollIntoView({behavior:"smooth",block:"nearest"}),80);
+    }
+  }
+  function renderRoomConfirmationState(info){
+    if(!latestData)return;
+    const normalized=roomConfirmationData({room_confirmation:info,plan_revision:latestData.plan_revision});
+    latestData.room_confirmation=normalized;
+    latestData.plan_revision=Number(normalized.plan_revision)||latestData.plan_revision||0;
+    document.querySelectorAll(".room-confirm-card").forEach(card=>{card.outerHTML=buildRoomConfirmationHtml(latestData);});
+    if(normalized.all_confirmed)openRoomPostApprovalTasks();
+  }
+  async function confirmCurrentRoomPlan(btn){
+    // 当前浏览器用户确认本版方案；后端会广播给其他群友实时更新。
+    if(!sharedRoomId||!latestData)return;
+    if(btn)btn.disabled=true;
+    try{
+      const res=await fetch(`${API_BASE}/rooms/${encodeURIComponent(sharedRoomId)}/confirm`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({client_id:clientId,speaker:roomSpeaker||"群友",plan_revision:Number(latestData.plan_revision)||0})});
+      const data=await res.json();
+      if(!res.ok||data.error){addMsg("bot",data.error||"确认失败，请稍后重试。");if(btn)btn.disabled=false;return;}
+      applyRoomSnapshot(data);
+      startConfirmationPolling();
+    }catch(err){
+      addMsg("bot",`确认失败：${err.message}`);
+      if(btn)btn.disabled=false;
+    }
+  }
+  function addMsg(role,text,options={}){
+    // 统一向聊天框追加消息，并写入本地历史。
+    const el = appendMsgNode(role,text);
+    if(!options.skipHistory){
+      currentMessages.push({role,text:text||"",time:Date.now()});
+      refreshConversationMeta(currentTitle());
+      saveHistory();
+    }
+    return el;
+  }
+  function refreshConversationMeta(fallback){
+    const hard = latestData && latestData.structured_plan && latestData.structured_plan.hard_constraints;
+    $("conversation-meta").textContent = hard && hard.route_logic_mode ? routeLogicLabel(hard) : (fallback || currentTitle());
+  }
+  function setBusy(v){sendBtn.disabled=v;inputEl.disabled=v;}
+  function displayTimeRange(t){return String(t||"").replace(/^0/,"").replace("-0","-") || "时间待定";}
+  function roleIcon(role,item){
+    const cat = item && (item.route_category || item.amap_route_category || "");
+    const label = item && (item.display_type || item.amap_display_tag || "");
+    if(role==="meal")return "ti-tools-kitchen-2";
+    if(role==="light_food")return "ti-cup";
+    if(cat==="ktv" || /KTV|唱歌|卡拉OK/.test(label))return "ti-microphone-2";
+    if(cat==="cinema" || /影院|电影/.test(label))return "ti-movie";
+    if(cat==="shopping" || /商场|购物/.test(label))return "ti-building-store";
+    if(cat==="park" || /公园|森林|湿地/.test(label))return "ti-trees";
+    if(cat==="museum" || cat==="art_exhibition" || /博物馆|美术馆|展览|艺术/.test(label))return "ti-building-museum";
+    return "ti-map-pin";
+  }
+  function roleLabel(role,item){
+    if(item && item.display_type) return item.display_type;
+    if(item && item.amap_display_tag) return item.amap_display_tag;
+    if(role==="meal")return "餐饮";if(role==="light_food")return "咖啡/轻食";if(role==="park")return "公园";if(role==="unknown")return "地点";return "景点";
+  }
+  function displayName(item){return item.display_name || item.place || "待确认地点";}
+  function stopTags(item){
+    const tags = [item.purpose || "行程地点"];
+    if(item.place_role === "meal") tags.push("用餐");
+    if(item.place_role === "light_food") tags.push("轻食");
+    return tags.slice(0,3);
+  }
+  function normPlace(s){return String(s||"").replace(/\s+/g,"").toLowerCase();}
+  function samePlace(a,b){
+    const x=normPlace(a), y=normPlace(b);
+    return Boolean(x && y && (x===y || x.includes(y) || y.includes(x)));
+  }
+  function couponForPlace(placeName){
+    const items = ((latestData && latestData.coupon_info && latestData.coupon_info.items) || []);
+    return items.find(item=>samePlace(item.place_name,placeName) || samePlace(item.display_name,placeName));
+  }
+  function reservationForPlace(placeName){
+    const items = ((latestData && latestData.reservation_options) || []);
+    return items.find(item=>samePlace(item.place_name,placeName) || samePlace(item.display_name,placeName));
+  }
+  function showDetailModal(title, html){
+    $("detail-title").textContent = title;
+    $("detail-body").innerHTML = html;
+    $("detail-modal").classList.add("open");
+  }
+  function closeDetailModal(event){
+    if(event && event.target && event.target.closest(".detail-box") && !event.target.closest(".detail-close")) return;
+    $("detail-modal").classList.remove("open");
+  }
+  function orderInfoTitle(kind){
+    if(kind === "reserve") return "预订信息";
+    if(kind === "coupon") return "团购信息";
+    if(kind === "error") return "失败";
+    return "订单信息";
+  }
+  function orderActionKey(kind, placeName){
+    return `${kind || "info"}:${normPlace(placeName || "当前路线")}`;
+  }
+  function hasCompletedOrderAction(kind, placeName){
+    const key = orderActionKey(kind, placeName);
+    return orderInfoItems.some(item =>
+      item &&
+      item.kind === kind &&
+      orderActionKey(item.kind, item.place_name) === key &&
+      !String((item.raw && item.raw.error) || item.message || "").includes("失败")
+    );
+  }
+  function normalizeOrderMessage(text){
+    return cleanInventoryText(String(text || "").replace(/mock/ig, "当前数据"));
+  }
+  function updateOrderInfoButton(){
+    const btn = $("order-info-btn") || $("regen-btn");
+    if(!btn) return;
+    const n = orderInfoItems.length;
+    btn.innerHTML = `<i class="ti ti-receipt"></i> 订单信息${n ? ` · ${n}` : ""}`;
+    btn.title = n ? `已保存 ${n} 条预订/团购信息` : "查看本路线的预订和团购信息";
+  }
+  function recordOrderInfo(kind, placeName, data, fallback){
+    const finalKind = kind || "info";
+    const finalPlace = placeName || (data && (data.place_name || data.display_name)) || "当前路线";
+    if(finalKind === "coupon" && hasCompletedOrderAction("coupon", finalPlace)){
+      updateOrderInfoButton();
+      return orderInfoItems.find(item => item && item.kind === "coupon" && orderActionKey(item.kind, item.place_name) === orderActionKey("coupon", finalPlace));
+    }
+    const item = {
+      kind: finalKind,
+      place_name: finalPlace,
+      message: normalizeOrderMessage((data && (data.message || data.question || data.error)) || fallback || "订单信息已更新。"),
+      raw: data || {},
+      time: new Date().toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit"})
+    };
+    orderInfoItems.unshift(item);
+    orderInfoItems = orderInfoItems.slice(0, 12);
+    updateOrderInfoButton();
+    return item;
+  }
+  function availableOrderCandidates(){
+    const items = [];
+    const seen = new Set();
+    const pushOnce = (item) => {
+      const key = orderActionKey(item.kind, item.place_name || item.title);
+      if(seen.has(key)) return;
+      if(item.kind === "coupon" && hasCompletedOrderAction("coupon", item.place_name)) return;
+      seen.add(key);
+      items.push(item);
+    };
+    const reservations = ((latestData && latestData.reservation_options) || []).filter(x=>x && (x.need_booking || x.has_seat || x.seat_count > 0));
+    reservations.forEach(item=>{
+      const name = item.display_name || item.place_name || "可预订地点";
+      pushOnce({kind:"reserve", place_name:item.place_name || name, title:`预订 ${name}`, meta:`${item.time || "时间待定"} · ${item.seat_count ?? 0} 个余位 · 排队约 ${item.queue_minutes ?? 0} 分钟`});
+    });
+    const coupons = (((latestData && latestData.coupon_info) || {}).items || []);
+    coupons.forEach(item=>{
+      const name = item.display_name || item.place_name || "团购地点";
+      pushOnce({kind:"coupon", place_name:item.place_name || name, title:`领取 ${name} 优惠`, meta:`${item.discount || "优惠待核验"} · ${item.price_range || "价格待核验"}`});
+    });
+    return items;
+  }
+  function parseOrderMessageFields(text){
+    const fields = [];
+    const notes = [];
+    String(text || "").split(/\n+/).forEach(line=>{
+      const raw = line.trim();
+      if(!raw) return;
+      const m = raw.match(/^-\s*([^：:]{1,18})[：:]\s*(.*)$/);
+      if(m){
+        fields.push({label:m[1].trim(), value:(m[2] || "").trim() || "-"});
+      }else if(!/^预约信息如下/.test(raw)){
+        notes.push(raw);
+      }
+    });
+    return {fields, notes};
+  }
+  function orderInfoFieldIcon(label){
+    const t = String(label || "");
+    if(/时间|排队/.test(t)) return "⏱️";
+    if(/余位|座位/.test(t)) return "✅";
+    if(/团购|优惠/.test(t)) return "🎟️";
+    if(/预约单号|单号/.test(t)) return "#";
+    if(/类型/.test(t)) return "🏷️";
+    if(/店铺|地点/.test(t)) return "📍";
+    return "•";
+  }
+  function orderInfoCardHtml(item, idx){
+    const kind = item.kind || "info";
+    const icon = kind === "reserve" ? "ti-calendar-check" : kind === "coupon" ? "ti-ticket" : kind === "error" ? "ti-alert-triangle" : "ti-info-circle";
+    const title = kind === "reserve" ? "预订信息已保存" : kind === "coupon" ? "团购信息已保存" : kind === "error" ? "操作失败" : "信息已保存";
+    const status = kind === "error" ? "失败" : "已保存";
+    const parsed = parseOrderMessageFields(item.message || "");
+    const fields = parsed.fields.slice(0, 8);
+    const notes = parsed.notes.join("\n");
+    const fieldHtml = fields.length ? `<div class="order-info-kv-grid">${fields.map(f=>`<div class="order-info-kv"><div class="order-info-kv-label">${esc(orderInfoFieldIcon(f.label))} ${esc(f.label)}</div><div class="order-info-kv-value">${esc(f.value)}</div></div>`).join("")}</div>` : "";
+    const noteHtml = notes ? `<div class="order-info-note">${esc(notes).replace(/\n/g,"<br>")}</div>` : (!fields.length ? `<div class="order-info-note">${esc(item.message || "暂无详情。").replace(/\n/g,"<br>")}</div>` : "");
+    return `<div class="order-info-card saved ${esc(kind)}">
+      <div class="order-info-card-head"><span><i class="ti ${icon}"></i> ${esc(title)}</span><small>${esc(item.time || "")}</small></div>
+      <div class="order-info-place-row">
+        <div class="order-info-place-icon"><i class="ti ${icon}"></i></div>
+        <div class="order-info-place-main"><div class="order-info-place">${esc(item.place_name || "当前路线")}</div><div class="order-info-kind-sub">${esc(orderInfoTitle(kind))}</div></div>
+        <span class="order-info-status-pill"><i class="ti ${kind === "error" ? "ti-alert-triangle" : "ti-check"}"></i>${esc(status)}</span>
+      </div>
+      ${fieldHtml}
+      ${noteHtml}
+    </div>`;
+  }
+  function availableOrderCardHtml(item){
+    const icon = item.kind === "reserve" ? "ti-calendar-check" : "ti-ticket";
+    const typeLabel = item.kind === "reserve" ? "预订任务" : "团购任务";
+    return `<div class="order-info-card pending">
+      <div class="order-info-card-head"><span><i class="ti ${icon}"></i> ${esc(item.title || typeLabel)}</span><small>仅展示</small></div>
+      <div class="order-info-message">${esc(item.meta || "这个任务可以在对话里的任务卡片中执行。")}</div>
+      <div class="order-info-message" style="color:#B4B2A9;margin-top:4px;">请在对话任务卡片中执行预订/领券操作；订单信息只负责保存和展示详情。</div>
+    </div>`;
+  }
+  function showOrderInfoModal(){
+    const saved = orderInfoItems.map(orderInfoCardHtml).join("");
+    const savedHtml = saved ? `<div class="order-info-summary"><div class="order-info-summary-icon"><i class="ti ti-receipt"></i></div><div><div class="order-info-summary-title">已保存的订单信息</div><div class="order-info-summary-sub">这里只展示已在对话中完成的预订/团购操作。</div></div></div>${saved}` : "";
+    const empty = !saved ? `<div class="order-info-empty">暂无订单信息。请先在对话卡片中完成预订或领券任务，完成后详情会显示在这里。</div>` : "";
+    showDetailModal("订单信息", `${savedHtml}${empty}`);
+  }
+  function showCouponInfo(encodedPlaceName){
+    const placeName = decodeURIComponent(encodedPlaceName || "");
+    const item = couponForPlace(placeName);
+    const stop = scheduleItemForPlace(placeName) || {};
+    const time = stop.time || "时间待定";
+    if(!item){
+      showDetailModal("团购券", `<strong>${esc(displayName(stop) || placeName)}</strong>
+时间：${esc(time)}
+团购状态：暂无团购券
+说明：当前最终路线里没有查到可用团购券，按普通到店/购票方式处理即可。`);
+      return;
+    }
+    const name = item.display_name || item.place_name || placeName;
+    showDetailModal("团购券详情", `<strong>${esc(name)}</strong>
+时间：${esc(time)}
+团购状态：有团购券
+${esc(item.coupon_type || "团购券")}｜${esc(item.discount || "优惠待核验")}
+类型：${esc(item.place_type || "待核验")}
+参考价格：${esc(item.price_range || "待核验")}
+
+<button class="mini-btn" onclick="reserveCoupon('${encodeURIComponent(item.place_name || name)}');document.getElementById('detail-modal').classList.remove('open')">领取并预约</button>`);
+  }
+  function showReservationInfo(encodedPlaceName){
+    const placeName = decodeURIComponent(encodedPlaceName || "");
+    const item = reservationForPlace(placeName);
+    const stop = scheduleItemForPlace(placeName) || {};
+    const title = (item && item.need_booking) || stop.need_booking ? "预订详情" : "前往信息";
+    const name = (item && (item.display_name || item.place_name)) || displayName(stop) || placeName;
+    const status = stop.availability_status || {};
+    const msg = cleanInventoryText(status.message || "");
+    const hasSeat = item ? item.has_seat : !/暂无|已满|无余位|未接入/.test(msg);
+    const seatText = item ? `${item.seat_count ?? 0}` : (status.seat_count ?? status.remaining_seats ?? (hasSeat ? "有余位" : "0"));
+    const queueText = item ? `${item.queue_minutes ?? 0}分钟` : (status.queue_minutes != null ? `${status.queue_minutes}分钟` : "暂无明显排队风险");
+    const needBooking = Boolean((item && item.need_booking) || stop.need_booking);
+    const btn = needBooking ? `
+<button class="mini-btn" onclick="reservePlace('${encodeURIComponent((item && item.place_name) || stop.place || name)}');document.getElementById('detail-modal').classList.remove('open')">确认预订</button>` : "";
+    showDetailModal(title, `<strong>${esc(name)}</strong>
+时间：${esc((item && item.time) || stop.time || "时间待定")}
+预约状态：${needBooking ? "需要/建议预约" : "无需预约，可直接前往"}
+余位：${hasSeat ? "有" : "暂无"}（${esc(seatText)}）
+预计排队：${esc(queueText)}
+说明：${esc(msg || (needBooking ? "建议提前确认预约时段，避免现场等待。" : (hasSeat ? "当前余位状态显示可正常前往，按时间轴出发即可。" : "当前余位状态显示暂无余位，不建议直接前往。")))}${btn}`);
+  }
+  function transitSummary(item){return (item.transport_from_previous && item.transport_from_previous.summary) || "交通距离暂未计算成功";}
+  function buildTransit(index,item){
+    const summary = transitSummary(item);
+    const icon = summary.includes("步行") ? "ti-walk" : summary.includes("打车") || summary.includes("驾车") ? "ti-car" : "ti-train";
+    const id = `tr-${index}`;
+    return `<div class="transit-block"><div class="t-spine-wrap"><div class="t-spine-line"></div></div><div style="padding:3px 0;">
+      <div class="transit-pill" id="${id}" onclick="toggleTransit('${id}')">
+        <i class="ti ${icon}"></i><span>${esc(summary)}</span><i class="ti ti-chevron-down"></i>
+        <div class="transport-popup">
+          <div class="tp-label">Transport reference</div>
+          <div class="tp-opt sel"><i class="ti ${icon}"></i><div><div>${esc(summary)}</div><small>来自后端高德/结构化路线</small></div></div>
+          <div class="tp-opt" onclick="sendPrompt('这段路少走路，优先地铁或打车')"><i class="ti ti-route"></i><div>少走路重排</div></div>
+        </div>
+      </div></div></div>`;
+  }
+  function buildInitialTransit(data, schedule, hard){
+    if(!schedule || !schedule.length) return "";
+    const depExplicit = Boolean(hard.departure_explicit || (data.collected_info && data.collected_info._departure_explicit));
+    const departure = depExplicit ? (hard.departure || (data.collected_info && data.collected_info.departure) || "") : "";
+    if(!departure) return "";
+    const first = schedule[0];
+    const name = displayName(first);
+    const seg = first.transport_from_previous || {};
+    const summary = seg.summary || `从${departure}到${name}：距离和耗时待地图核验，建议出发前打开地图确认。`;
+    const icon = summary.includes("步行") ? "ti-walk" : summary.includes("打车") || summary.includes("驾车") ? "ti-car" : "ti-train";
+    const id = "tr-start";
+    // 和站点之间的转场行保持同一格式：左侧时间轴虚线 + 右侧小 pill。
+    return `<div class="transit-block initial-transit-block">
+      <div class="t-spine-wrap"><div class="t-spine-line"></div></div>
+      <div style="padding:3px 0;">
+        <div class="transit-pill" id="${id}" onclick="toggleTransit('${id}')">
+          <i class="ti ${icon}"></i><span>${esc(summary)}</span><i class="ti ti-chevron-down"></i>
+          <div class="transport-popup">
+            <div class="tp-label">Start transfer</div>
+            <div class="tp-opt sel"><i class="ti ${icon}"></i><div><div>${esc(summary)}</div><small>从出发地到第一站，格式与站点转场保持一致</small></div></div>
+            <div class="tp-opt" onclick="sendPrompt('从出发地到第一站少走路，优先地铁或打车')"><i class="ti ti-route"></i><div>少走路重排</div></div>
+          </div>
+        </div>
+      </div>
+    </div>`;
+  }
+  function buildInlineMapHtml(routeMap, sessionId){
+    const markers = (routeMap && routeMap.markers) || [];
+    const markerList = markers.length ? `<div class="map-marker-list">${markers.map(m=>`<span class="map-marker-chip">${esc(m.index)}. ${esc(m.place)}${m.time ? ` · ${esc(m.time)}` : ""}</span>`).join("")}</div>` : "";
+    if(routeMap && routeMap.available && sessionId){
+      return `<div class="chat-map">
+        <div class="chat-map-title"><i class="ti ti-map-2"></i>路线地图</div>
+        <div class="map-wrap">
+          <div class="map-placeholder">动态路线地图已生成，请在“行程”页查看和缩放。</div>
+        </div>
+        ${markerList}
+      </div>`;
+    }
+    return `<div class="chat-map">
+      <div class="chat-map-title"><i class="ti ti-map-2"></i>路线地图</div>
+      <div class="map-placeholder">${esc((routeMap && routeMap.reason) || "路线小地图暂未生成")}${markerList}</div>
+    </div>`;
+  }
+  function routeLogicLabel(hard){
+    const mode = hard && hard.route_logic_mode;
+    if(mode === "fixed_start_destination") return `固定起终点：${hard.departure || "起点"} → ${hard.destination || "终点"}`;
+    if(mode === "single_anchor_destination") return `目的地锚点：${hard.destination || hard.planning_anchor || "未指定"}`;
+    if(mode === "single_anchor_departure") return `出发地锚点：${hard.departure || hard.planning_anchor || "未指定"}`;
+    return "当前会话";
+  }
+  function repairMojibakeText(value){
+    let text = String(value ?? "").trim();
+    if(!text || /^(undefined|null|nan)$/i.test(text)) return "";
+    try{
+      if(/[ÃÂäåæ�]/.test(text)){
+        const bytes = Array.from(text).map(ch=>ch.charCodeAt(0));
+        const repaired = new TextDecoder("utf-8", {fatal:false}).decode(new Uint8Array(bytes));
+        if(repaired && /[\u4e00-\u9fff]/.test(repaired)) text = repaired;
+      }
+    }catch(_){}
+    return text.replace(/�/g, "").trim();
+  }
+  function displayBudget(value, fallback="待定"){
+    let text = repairMojibakeText(value);
+    if(!text) return fallback;
+    if(/预计人均|总计约|预算待核验|价格待核验/.test(text)) return text;
+    text = text.replace(/[￥¥]/g, "").replace(/RMB/ig, "").replace(/\s+/g, "");
+    const match = text.match(/(\d{1,5})(?:\.0+)?/);
+    if(match){
+      const amount = parseInt(match[1], 10);
+      const totalLike = /总预算|总共|合计|一共/.test(text) && !/人均|每人|单人/.test(text);
+      const suffix = /左右|上下/.test(text) ? "左右" : "以内";
+      return `${totalLike ? "总预算" : "人均"}${amount}元${suffix}`;
+    }
+    return text || fallback;
+  }
+  function localCrowdTip(data){
+    const plan = (data && data.structured_plan) || latestData?.structured_plan || {};
+    if(plan.crowd_tip) return plan.crowd_tip;
+    const hard = plan.hard_constraints || {};
+    const text = [hard.planning_anchor, hard.area_anchor, hard.departure, hard.destination]
+      .concat((plan.schedule||[]).map(item => `${item.place||""} ${item.display_name||""}`)).join(" ");
+    const central = ["陆家嘴","外滩","南京东路","南京西路","人民广场","豫园","新天地","淮海路","徐家汇","静安寺","武康路","安福路","长乐路"];
+    const suburban = ["松江","嘉定","青浦","奉贤","金山","崇明","临港","佘山","朱家角","滴水湖"];
+    const c = central.find(k => text.includes(k));
+    if(c) return `👥 人流量提示：${c} 属于市中心/热门片区，周末可能人比较多。
+
+💡 建议：把拍照、点单和排队型项目尽量提前，饭点前后优先选可预约地点。`;
+    const q = suburban.find(k => text.includes(k));
+    if(q) return `👥 人流量提示：路线主要在 ${q} 等近郊/非核心商圈活动，通常比市中心更松弛。
+
+💡 建议：提前确认返程交通和打车可达性，郊区点位之间不要临时加太多站。`;
+    return `👥 人流量提示：这条路线预计人流中等，不是纯热门景点堆叠。
+
+💡 建议：如遇节假日或热门展览，仍建议提前核验营业和排队情况。`;
+  }
+  function hasReservablePlaces(data){
+    const plan = (data && data.structured_plan) || latestData?.structured_plan || {};
+    if(typeof plan.has_reservable_places === "boolean") return plan.has_reservable_places;
+    const options = (data && data.reservation_options) || latestData?.reservation_options || [];
+    return options.some(item => item && item.need_booking);
+  }
+  function buildLocalStopNarrative(item, idx, schedule){
+    const name = displayName(item).replace(/[（(].*?[）)]/g, "").slice(0,14) || "这一站";
+    const purpose = String(item.purpose || "行程地点");
+    const duration = Number(item.duration_min || 0);
+    const stay = duration ? `大概留 ${duration} 分钟` : "按现场节奏慢慢来";
+    const price = item.price_text && !/待核验/.test(item.price_text) ? `参考花费${item.price_text}` : "花费按现场为准";
+    const seed = normPlace(name + (item.time || "") + idx).split("").reduce((a,ch)=>a+ch.charCodeAt(0),0);
+    const tone = seed % 3;
+    const text = `${name}${purpose}`;
+    const endings = [
+      "拍照、休息和转场都不用卡太死，照着时间轴走就能把半日节奏稳稳拿捏。",
+      "如果现场人多，就先完成最想体验的部分，剩下的时间留给拍照和顺路闲逛。",
+      "这一段不用追求全打卡，把舒服度放在前面，整条路线会比硬赶场更好执行。"
+    ];
+    if(item.place_role === "meal"){
+      const arr = [
+        `🍜 ${name}适合安排成回血站，${stay}，前面逛完坐下来吃一顿会舒服很多。${price}，建议优先点招牌或套餐，既不容易踩雷也更好控预算；吃完再去下一站，体力和心情都会重新上线。${endings[tone]}`,
+        `🥢 把${name}放在这里很顺，刚好避开一直走一直逛的疲惫感。${stay}基本够点菜、吃饭和稍微休息，${price}；如果同行人胃口不一样，可以用套餐/招牌菜做主线，不用纠结太久。${endings[tone]}`,
+        `🍽️ ${name}这一段主打坐下慢慢吃，不要把饭点压得太赶。${stay}更像一次中场补给，${price}，吃完再继续后面的安排会轻松很多，也能避免半路临时找店浪费时间。${endings[tone]}`
+      ]; return arr[tone];
+    }
+    if(item.place_role === "light_food"){
+      const arr = [
+        `☕ ${name}很适合当作缓冲点，${stay}，点杯喝的、整理照片、顺手查一下下一段路线，整个人会从赶路模式切回松弛模式。${price}，不用安排太满，舒服坐一会儿就是这一站的重点。${endings[tone]}`,
+        `🍰 ${name}适合放在中途休息，尤其前后都是走路或看展时，这一站会很救命。${stay}可以喝点东西、补个能量，${price}；如果天气热或人多，也能顺便躲一下高峰。${endings[tone]}`,
+        `🥤 ${name}不需要玩得很复杂，把它当成半日路线里的小暂停就好。${stay}刚好用来喘口气、聊聊天、看照片，${price}，后面继续走会明显没那么累。${endings[tone]}`
+      ]; return arr[tone];
+    }
+    if(/公园|滨江|散步|citywalk|步道|草坪|郊野|森林|园区/.test(text)){
+      const arr = [
+        `🌿 ${name}这一段适合慢慢走，${stay}，不要急着把每个角落都刷完。树影、街景、建筑边角和路过的小店都可以顺手拍，氛围感会比硬打卡更自然。${price}，建议把节奏放松一点，看到喜欢的地方就停。${endings[tone]}`,
+        `🚶 ${name}更适合用散步的方式打开，${stay}会比较舒服。路线里有这种户外/街区段，最好别边走边赶，留一点时间看细节、拍照片、找个地方坐一下，半日路线会更像真正的周末。${price}。${endings[tone]}`,
+        `📷 ${name}的重点不是冲刺式打卡，而是慢慢逛出感觉。${stay}可以把步速放下来，先看整体环境，再找几个顺眼的角度拍照；${price}，如果遇到人多就绕开主路，体验会更好。${endings[tone]}`
+      ]; return arr[tone];
+    }
+    if(/展|美术馆|博物馆|艺术|馆/.test(text)){
+      const arr = [
+        `🎨 ${name}适合认真留时间看，${stay}，不要只冲着门口或热门展区拍照。可以先挑最感兴趣的区域，再留一点时间看细节和纪念品区；${price}，如果遇到临展或预约规则，进场前先确认会更稳。${endings[tone]}`,
+        `🖼️ ${name}这一站可以把节奏压慢一点，${stay}刚好用来看重点内容。建议别一进门就到处赶，先看导览或展区分布，再按兴趣挑路线；${price}，这样出来以后不会有“好像看了但没记住”的感觉。${endings[tone]}`,
+        `🏛️ ${name}更适合沉浸式逛，${stay}可以把重点展区看得比较从容。遇到人多时先去相对冷门的区域，最后再回到热门点补拍；${price}，整体体验会比跟着人流挤好很多。${endings[tone]}`
+      ]; return arr[tone];
+    }
+    const generic = [
+      `✨ ${name}放在这里是为了让路线有一个清晰的节奏点，${stay}，既能换场景，也不会让行程显得太散。${price}，建议抓住一个最想体验的内容就好，不用把周边全部走完。${endings[tone]}`,
+      `🧭 ${name}这一段负责承上启下，${stay}会比较舒服。前一站结束后不用急着冲，先按交通提示过去，再把主要体验完成；${price}，如果现场状态一般，也可以适当缩短停留，把时间留给下一站。${endings[tone]}`,
+      `🌟 ${name}适合当作这条路线里的重点体验之一，${stay}，不用把计划排得太满。${price}，到场后先确认营业/入场状态，再按兴趣选择最值得停留的部分，整个半日会更顺。${endings[tone]}`
+    ];
+    return generic[tone];
+  }
+  function purposeEmoji(text, role){
+    const t = String(text || "") + String(role || "");
+    if(role === "meal") return "🍜";
+    if(role === "light_food") return "☕";
+    if(/公园|散步|户外|滨江|草坪/.test(t)) return "🌿";
+    if(/展|艺术|美术馆|博物馆/.test(t)) return "🎨";
+    if(/电影|影院/.test(t)) return "🎬";
+    return "🧭";
+  }
+  function availabilityClass(item){
+    const status = item.availability_status || {};
+    const text = String(status.status || status.level || status.message || "");
+    if(/unavailable|full|warn|暂无|已满|排队|失败|过长/.test(text)) return "status-warn";
+    return "status-ok";
+  }
+  function shortAvailability(item){
+    const msg = item.availability_status && item.availability_status.message ? cleanInventoryText(item.availability_status.message) : "状态待核验";
+    if(/暂无|已满|无余位|排队|过长|未接入/.test(msg)) return "需留意";
+    if(/有余位|可正常|无需预约|直接前往/.test(msg)) return "状态OK";
+    if(/未在|核验/.test(msg)) return "需核验";
+    return msg.length > 12 ? msg.slice(0,12) + "…" : msg;
+  }
+  function scheduleItemForPlace(placeName){
+    const schedule = ((latestData && latestData.structured_plan && latestData.structured_plan.schedule) || []);
+    return schedule.find(item=>samePlace(item.place, placeName) || samePlace(item.display_name, placeName));
+  }
+  function priceRangeAdd(target, item){
+    const low = Number(item && item.price_min) || 0;
+    const high = Number(item && item.price_max) || low;
+    target.min += Math.max(0, low);
+    target.max += Math.max(0, high >= low ? high : low);
+  }
+  function fmtRange(obj){
+    const a = Math.round(obj.min || 0), b = Math.round(obj.max || 0);
+    if(a <= 0 && b <= 0) return "待核验";
+    return a === b ? `¥${b}` : `¥${a}–${b}`;
+  }
+  function budgetBreakdown(data){
+    const schedule = (((data || latestData || {}).structured_plan || {}).schedule || []);
+    const tickets = {min:0,max:0}, lunch = {min:0,max:0}, cafe = {min:0,max:0};
+    schedule.forEach(item=>{
+      if(item.place_role === "meal") priceRangeAdd(lunch,item);
+      else if(item.place_role === "light_food") priceRangeAdd(cafe,item);
+      else priceRangeAdd(tickets,item);
+    });
+    const segs = (((data || latestData || {}).structured_plan || {}).route_segments || ((data || latestData || {}).route_segments) || []);
+    const transitMax = Math.max(0, segs.length || Math.max(0, schedule.length - 1)) * 6;
+    const transit = transitMax ? `¥${Math.max(3, transitMax - 6)}–${transitMax}` : "待核验";
+    const lines = [];
+    if(tickets.min || tickets.max) lines.push(`门票/活动 ${fmtRange(tickets)}`);
+    if(lunch.min || lunch.max) lines.push(`正餐/美食 ${fmtRange(lunch)}`);
+    if(cafe.min || cafe.max) lines.push(`咖啡/小食 ${fmtRange(cafe)}`);
+    lines.push(`地铁/转场 ${transit}`);
+    return lines;
+  }
+  function queueHackTip(data){
+    const plan = (data && data.structured_plan) || latestData?.structured_plan || {};
+    const schedule = Array.isArray(plan.schedule) ? plan.schedule : [];
+    const warn = schedule.find(item=>/暂无|已满|排队|过长|需留意/.test((item.availability_status && item.availability_status.message) || ""));
+    if(warn) return `⏱️ 总括：${displayName(warn)} 可能需要多留意余位/排队。
+
+💡 建议：先点开站点状态看详情，必要时提前换备选或把餐饮时间错开高峰。
+
+🛣️ 距离提醒：如果某段转场偏长，优先地铁/打车，不要临时加站。`;
+    const firstHot = schedule.find(item=>/陆家嘴|外滩|豫园|南京|人民广场|新天地|武康路|安福路/.test(`${item.place||""}${item.display_name||""}`));
+    if(firstHot) return `⏱️ 总括：${displayName(firstHot)} 属于热门片区，可能有拍照/排队高峰。
+
+💡 建议：把拍照和排队型项目尽量前置，饭点前后避开高峰。
+
+🛣️ 距离提醒：按时间轴走，不建议临时横跨到另一个商圈。`;
+    return `⏱️ 总括：这版路线没有明显满位/排队风险。
+
+💡 建议：按时间轴走即可，餐饮点错峰到店会更稳。
+
+🛣️ 距离提醒：转场以页面中的交通提示为准。`;
+  }
+  function buildPreferenceReasonHtml(data){
+    const plan = (data && data.structured_plan) || {};
+    const hard = plan.hard_constraints || {};
+    const notes = [];
+    const interestNotes = plan.interest_match_notes || hard.interest_match_notes || [];
+    if(Array.isArray(interestNotes) && interestNotes.length){
+      notes.push(...interestNotes.slice(0,3).map(x => `兴趣匹配：${x}`));
+    }
+    if(!notes.length) return "";
+    return `<div class="overview-reasons">${notes.slice(0,4).map(n=>`<div class="overview-reason"><i class="ti ti-sparkles"></i><span>${esc(n)}</span></div>`).join("")}</div>`;
+  }
+
+  function buildRouteOverviewHtml(data, schedule, hard){
+    const overview = (data.structured_plan && data.structured_plan.route_overview_copy) || hard.route_overview_copy || "";
+    const people = hard.num_people || (data.collected_info && data.collected_info.num_people) || "";
+    const depExplicit = Boolean(hard.departure_explicit || (data.collected_info && data.collected_info._departure_explicit));
+    const departureRaw = depExplicit ? (hard.departure || (data.collected_info && data.collected_info.departure) || "") : "";
+    const departure = /保留用户明确|不同路线|重新生成|当前偏好/.test(String(departureRaw||"")) ? "" : departureRaw;
+    const budget = displayBudget(hard.budget_estimate_text || hard.budget, "预算待定");
+    const anchor = hard.overview_anchor || hard.destination || hard.area_anchor || hard.planning_anchor || (schedule[0] && displayName(schedule[0])) || "上海";
+    const text = overview || `✨ ${people || ""}人${departure ? `从${departure}出发，` : ""}围绕${anchor}安排的半日路线来啦！${budget}，直接照着时间轴走就好～`;
+    const placePill = departure ? `<span class="overview-pill">📍 ${esc(departure)}</span>` : `<span class="overview-pill">📍 ${esc(anchor)}</span>`;
+    const reasons = buildPreferenceReasonHtml(data);
+    return `<div class="route-overview"><strong>${esc(text)}</strong><div class="overview-sub"><span class="overview-pill">👥 ${esc(people || "人数待定")}</span>${placePill}<span class="overview-pill">💰 ${esc(budget)}</span><span class="overview-pill">🗺️ ${schedule.length} 站</span></div>${reasons}</div>`;
+  }
+
+  function formatDistanceMeters(m){
+    const n = Number(m) || 0;
+    if(!n)return "未核验";
+    return n >= 1000 ? `${(n/1000).toFixed(n >= 10000 ? 0 : 1)}km` : `${Math.round(n)}m`;
+  }
+  function buildConstraintStatusHtml(data){
+    const plan = (data && data.structured_plan) || {};
+    const validation = plan.route_logic_validation || {};
+    const radius = validation.route_radius_constraint || {};
+    const business = validation.business_hours_constraint || {};
+    const radiusLines = [];
+    if(radius.enabled){
+      radiusLines.push(`锚点：${radius.anchor || "目的地/类型核心地点"}`);
+      radiusLines.push(`范围：${formatDistanceMeters(radius.radius_m)} 内优先成团`);
+      const replacements = Array.isArray(radius.replacements) ? radius.replacements : [];
+      if(replacements.length){
+        radiusLines.push(...replacements.slice(0,3).map(x=>`替换：${x.from} → ${x.to}`));
+      }else{
+        radiusLines.push("未发现需要替换的超范围地点。");
+      }
+    }else{
+      radiusLines.push(radius.anchor ? "范围约束未开启。" : "未识别到可用目的地/类型锚点，未执行10km硬约束。");
+    }
+    const businessLines = [];
+    if(business.enabled){
+      const checked = Array.isArray(business.checked) ? business.checked : [];
+      const replaced = Array.isArray(business.replacements) ? business.replacements : [];
+      const openCount = checked.filter(x=>x.status==="open").length;
+      const unknownCount = checked.filter(x=>x.status==="unknown").length;
+      const closedCount = checked.filter(x=>x.status==="closed").length;
+      businessLines.push(`高德营业字段：已查询 ${checked.length} 个地点，${openCount} 个匹配，${unknownCount} 个需核验，${closedCount} 个冲突。`);
+      if(replaced.length){
+        businessLines.push(...replaced.slice(0,3).map(x=>`营业替换：${x.from} → ${x.to}`));
+      }else if(closedCount){
+        businessLines.push("存在营业冲突但未找到可解析营业中的近距离同类型候选。");
+      }else{
+        businessLines.push("未发生营业时间替换。");
+      }
+    }else{
+      businessLines.push("营业时间约束未开启或高德未返回可用字段。");
+    }
+    return `<div class="constraint-card">
+      <div class="constraint-title"><i class="ti ti-shield-check"></i>路线约束执行</div>
+      <div class="constraint-sub">先执行目的地/类型核心地点 10km 范围约束，再执行高德营业时间约束；出发地只用于到第一站的转场计算。</div>
+      <div class="constraint-grid">
+        <div class="constraint-item"><div class="constraint-item-title">10km范围</div><div class="constraint-item-body">${esc(radiusLines.join("\n"))}</div></div>
+        <div class="constraint-item"><div class="constraint-item-title">营业时间</div><div class="constraint-item-body">${esc(businessLines.join("\n"))}</div></div>
+      </div>
+    </div>`;
+  }
+
+  function buildPlanningLogicHtml(data, options={}){
+    const plan = (data && data.structured_plan) || {};
+    const hard = plan.hard_constraints || {};
+    const exp = data.planning_explanation || plan.planning_explanation || hard.planning_explanation || {};
+    const steps = Array.isArray(exp.steps) ? exp.steps : [];
+    if(!steps.length) return "";
+    const title = exp.title || "方案生成逻辑";
+    const summary = exp.summary || "按用户最新需求、路线距离、预算、余位和地点类型生成本次方案。";
+    const disclaimer = exp.disclaimer || "这里展示的是可解释的规划依据摘要，不是模型原始隐藏推理。";
+    const inChat = Boolean(options.inChat);
+    const stepLimit = inChat ? 4 : 6;
+    const className = `planning-explain-card${inChat ? " in-chat" : ""}`;
+    return `<div class="${className}">
+      <div class="planning-explain-head">
+        <div><div class="planning-explain-title"><i class="ti ti-brain"></i>${esc(title)}</div><div class="planning-explain-sub">${esc(summary)}</div></div>
+      </div>
+      <div class="planning-step-list">${steps.slice(0,stepLimit).map(step=>`<div class="planning-step"><div class="planning-step-title">${esc(step.title || "规划步骤")}</div><div class="planning-step-detail">${esc(cleanInventoryText(step.detail || "已按当前路线约束处理。"))}</div></div>`).join("")}</div>
+      <div class="planning-disclaimer">${esc(disclaimer)}</div>
+    </div>`;
+  }
+
+
+
+  const PLANNING_PROGRESS_STEPS = [
+    {title:"1. 需求识别", detail:"识别时间、人数、预算、出发地、目的地/区域锚点、ordered_steps、兴趣偏好。"},
+    {title:"2. 候选筛选", detail:"围绕最新目的地/区域，从地点库、已有标签和可用 POI 中筛选候选，并结合兴趣偏好提升相关地点排序。"},
+    {title:"3. 路线排序", detail:"检查地点类型与路线强度，按 ordered_steps、距离、类型去重、用户明确地点进行排序。"},
+    {title:"4. 时间分配", detail:"按游乐园、公园、city walk、餐饮等不同类型动态分配停留时间。"},
+    {title:"5. 预算与状态校验", detail:"估算人均/总预算。"},
+    {title:"6. 异常风险提示", detail:"汇总满位、营业时间等冲突，生成右侧提醒与前端可读说明。"}
+  ];
+
+  function appendPlanningProgressNode(){
+    const wrap=document.createElement("div");
+    wrap.className="msg-ai planning-progress-msg";
+    wrap.innerHTML=`<div class="msg-ai-avatar"><i class="ti ti-robot"></i></div>
+      <div class="msg-ai-body">
+        <div class="msg-ai-bubble rich-bubble">
+          <div class="planning-progress-card">
+            <div class="planning-progress-head">
+              <div>
+                <div class="planning-progress-title"><i class="ti ti-brain"></i>正在生成方案</div>
+                <div class="planning-progress-sub">下面展示的是可给用户看的规划进度摘要，不是模型原始隐藏推理。</div>
+              </div>
+            </div>
+            <div class="planning-progress-list"></div>
+            <div class="planning-progress-foot">会依次完成 6 项：需求识别、候选筛选、路线排序、预算/余位/预约/团购、高德转场、异常风险。</div>
+          </div>
+        </div>
+      </div>`;
+    $("chat-log").appendChild(wrap);
+    $("chat-log").scrollTop=$("chat-log").scrollHeight;
+    const state={el:wrap,list:wrap.querySelector(".planning-progress-list"),timers:[],shown:0,finished:false};
+    state.timers.push(setTimeout(()=>planningProgressShowNext(state),120));
+    for(let i=1;i<PLANNING_PROGRESS_STEPS.length;i++){
+      state.timers.push(setTimeout(()=>planningProgressShowNext(state),650+i*850));
+    }
+    return state;
+  }
+
+  function planningProgressShowNext(state){
+    // 前端先模拟展示规划阶段；最终展示内容会由后端 planning_explanation 覆盖。
+    if(!state || state.finished || !state.list) return;
+    if(state.shown >= PLANNING_PROGRESS_STEPS.length) return;
+    const prev=state.list.querySelector(".planning-progress-step.active");
+    if(prev){prev.classList.remove("active");prev.classList.add("done");const dot=prev.querySelector(".progress-dot");if(dot)dot.innerHTML='<i class="ti ti-check"></i>';}
+    const step=PLANNING_PROGRESS_STEPS[state.shown];
+    const row=document.createElement("div");
+    row.className="planning-progress-step active";
+    row.setAttribute("data-progress-index", String(state.shown));
+    row.innerHTML=`<div class="progress-dot">${state.shown+1}</div><div><div class="progress-step-title">${esc(step.title)}</div><div class="progress-step-detail">${esc(step.detail)}</div></div>`;
+    state.list.appendChild(row);
+    state.shown += 1;
+    $("chat-log").scrollTop=$("chat-log").scrollHeight;
+  }
+
+  function planningProgressBackendSteps(data){
+    const plan=(data && data.structured_plan) || {};
+    const hard=plan.hard_constraints || {};
+    const exp=(data && data.planning_explanation) || plan.planning_explanation || hard.planning_explanation || {};
+    const raw=Array.isArray(exp.steps) ? exp.steps : [];
+    if(!raw.length) return PLANNING_PROGRESS_STEPS;
+    const padded=PLANNING_PROGRESS_STEPS.map((fallback,idx)=>{
+      const step=raw[idx] || fallback;
+      return {title:step.title || fallback.title, detail:step.detail || fallback.detail};
+    });
+    return padded.slice(0,6);
+  }
+
+  function finishPlanningProgress(state, data, ok=true, message=""){
+    // 规划结束后，把进度卡固定成后端返回的规划依据，避免一直显示 loading。
+    if(!state || !state.el) return;
+    state.finished=true;
+    (state.timers || []).forEach(t=>clearTimeout(t));
+    const titleEl=state.el.querySelector(".planning-progress-title");
+    const subEl=state.el.querySelector(".planning-progress-sub");
+    if(titleEl) titleEl.innerHTML = ok ? '<i class="ti ti-circle-check"></i>方案生成逻辑已完成' : '<i class="ti ti-alert-triangle"></i>方案生成被暂停';
+    if(subEl) subEl.textContent = ok ? "已根据本轮后端返回结果更新 6 条规划依据。" : (message || "本轮没有生成完整方案，请按提示补充信息或稍后重试。");
+    const steps = ok ? planningProgressBackendSteps(data) : PLANNING_PROGRESS_STEPS;
+    if(state.list){
+      state.list.innerHTML = steps.slice(0,6).map((step,idx)=>`<div class="planning-progress-step ${ok ? 'done' : ''}"><div class="progress-dot">${ok ? '<i class="ti ti-check"></i>' : idx+1}</div><div><div class="progress-step-title">${esc(step.title || `步骤${idx+1}`)}</div><div class="progress-step-detail">${esc(step.detail || '已按当前输入处理。')}</div></div></div>`).join("");
+    }
+    const foot=state.el.querySelector(".planning-progress-foot");
+    if(foot) foot.textContent = ok ? "这些是可展示给用户的规划依据摘要，方便理解方案为什么这样生成。" : "等待用户补充信息后会继续规划。";
+    $("chat-log").scrollTop=$("chat-log").scrollHeight;
+  }
+
+  function removePlanningProgress(state){
+    if(!state) return;
+    state.finished=true;
+    (state.timers || []).forEach(t=>clearTimeout(t));
+    if(state.el) state.el.remove();
+  }
+
+  function bookingCouponTextForNarrative(item, coupon, reservation, bookingNeeded){
+    const status = item.availability_status || {};
+    const rawMsg = cleanInventoryText(status.message || "");
+    const hasRisk = /暂无|已满|无余位|排队|过长|失败|冲突|替换|需留意/.test(rawMsg);
+    let bookingText = "";
+    if(bookingNeeded){
+      const seat = reservation && reservation.seat_count != null ? `，当前参考余位${reservation.seat_count}` : "";
+      bookingText = `这一站建议提前预约${seat}，确认好时段后再出发会更稳。`;
+    }else if(hasRisk){
+      bookingText = `${rawMsg || "这一站存在余位或排队风险，建议出发前再确认。"}`;
+    }else{
+      bookingText = "出发前简单核验一下营业和到店状态就好。";
+    }
+    let couponText = "";
+    if(coupon){
+      const discount = coupon.discount || coupon.coupon_type || coupon.price_range || "优惠以现场/平台页面为准";
+      couponText = `当前可参考团购优惠：${discount}，下单前再核验适用门店和使用时段。`;
+    }else{
+      couponText = "";
+    }
+    return `${bookingText} ${couponText}`.trim();
+  }
+
+  function buildRouteCardsHtml(schedule){
+    // 根据 structured_plan.schedule 渲染完整 Itinerary 时间轴卡片。
+    // 这里不决定路线，只负责展示后端结构化结果。
+    let html = "";
+    schedule.forEach((item,idx)=>{
+      const color = idx % 6;
+      const name = displayName(item);
+      const coupon = couponForPlace(name) || couponForPlace(item.place);
+      const reservation = reservationForPlace(name) || reservationForPlace(item.place);
+      const bookingNeeded = Boolean((reservation && reservation.need_booking) || item.need_booking);
+      const baseNarrative = item.narrative || buildLocalStopNarrative(item, idx, schedule);
+      // 正文只展示后端生成的自由小红书风格文案；预约/团购/余位放在下方标签和任务按钮里，避免文案变成结构化说明。
+      const narrative = baseNarrative;
+      const purpose = item.purpose || roleLabel(item.place_role,item) || "行程地点";
+      const price = item.price_text || "价格待核验";
+      const duration = item.duration_min ? `约${item.duration_min}分钟` : "按现场节奏";
+      const availability = shortAvailability(item);
+      const statusClass = availabilityClass(item);
+      const actionRow = "";
+      const replacementLine = item.replacement_note ? `<div class="address-line">⚠️ ${esc(cleanInventoryText(item.replacement_note))}</div>` : "";
+      const addressLine = item.address ? `<div class="address-line">📍 ${esc(item.address)}</div>` : "";
+      html += `<div class="stop-row">
+        <div class="spine"><div class="s-dot sc-${color}"></div>${idx < schedule.length-1 ? `<div class="s-line sl-${color}" style="min-height:78px"></div>` : ""}</div>
+        <div class="stop-card">
+          <div class="card-head">
+            <div class="card-left">
+              <span class="tb tb-${color}">${esc(displayTimeRange(item.time))}</span>
+              <div class="stop-name">${esc(name)}</div>
+              <div class="stop-narrative">${esc(narrative)}</div>
+              <div class="stop-meta-chips">
+                <span class="meta-chip purpose">${purposeEmoji(purpose,item.place_role)} ${esc(purpose)}</span>
+                <span class="meta-chip time" title="${esc(item.duration_reason || '已按地点类型动态分配停留时间')}">⏱️ ${esc(duration)}</span>
+                <span class="meta-chip price">💰 ${esc(price)}</span>
+                <span class="meta-chip ${statusClass}">${statusClass === "status-warn" ? "⚠️" : "✅"} ${esc(availability)}</span>
+              </div>
+              ${actionRow}
+              ${replacementLine}
+              ${addressLine}
+            </div>
+            <div class="ptb ptb-${esc(item.place_role || 'place')}"><i class="ti ${roleIcon(item.place_role,item)}"></i><span>${esc(roleLabel(item.place_role,item))}</span></div>
+          </div>
+        </div>
+      </div>`;
+      if(idx < schedule.length-1) html += buildTransit(idx+1,schedule[idx+1]);
+    });
+    return html;
+  }
+  function buildInlineRouteCard(schedule, hard){
+    const rows = schedule.slice(0,5).map((item,idx)=>{
+      const name = displayName(item);
+      const color = ["#BA7517","#D85A30","#D4537E","#7F77DD","#378ADD"][idx%5];
+      const transit = idx < schedule.length-1 ? `<div class="inline-transit"><i class="ti ti-route"></i>${esc(transitSummary(schedule[idx+1]))}</div>` : "";
+      return `<div class="inline-stop"><div class="inline-num" style="background:${color}">${idx+1}</div><div class="inline-stop-name">${esc(name)}</div><div class="inline-stop-time">${esc(displayTimeRange(item.time))}</div></div>${transit}`;
+    }).join("");
+    return `<div class="inline-route">
+      <div class="inline-route-title"><i class="ti ti-map-2"></i>${esc(hard.date || "本周末")} · ${esc(hard.time_period || "半日")} · ${schedule.length} 站</div>
+      ${rows}
+    </div>`;
+  }
+  function openRouteMap(){
+    switchTab("route", {preserveScroll:true});
+    const pane = $("pane-route");
+    const map = $("map-section");
+    if(pane && map){
+      const top = Math.max(0, map.offsetTop - 12);
+      pane.scrollTo({top, behavior:"smooth"});
+    }
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+  }
+
+
+  function routeTaskCandidates(data){
+    const tasks = [];
+    const reservations = ((data && data.reservation_options) || []).filter(x=>x && (x.need_booking || x.has_seat || x.seat_count > 0));
+    reservations.slice(0,2).forEach((item,idx)=>{
+      const name = item.display_name || item.place_name || `可预订地点${idx+1}`;
+      const title = item.need_booking ? `预订 ${name}` : `查看 ${name} 到店状态`;
+      const reserveMeta = item.need_booking ? "建议预约" : "无需预约";
+      tasks.push({kind:"reserve", icon:"ti-calendar-check", theme:item.need_booking ? "ti-orange" : "ti-purple", name:title, meta:`${item.time || "时间待定"} · ${reserveMeta} · ${item.seat_count ?? 0}余位`, place:item.place_name || name});
+    });
+    const coupons = (((data && data.coupon_info) || {}).items || []);
+    coupons.slice(0,2).forEach((item,idx)=>{
+      const name = item.display_name || item.place_name || `团购地点${idx+1}`;
+      tasks.push({kind:"coupon", icon:"ti-badge-percent", theme:"ti-teal", name:`领取 ${name} 优惠`, meta:`${item.discount || "优惠待核验"} · ${item.price_range || "价格待核验"}`, place:item.place_name || name});
+    });
+    const seen = new Set();
+    return tasks.filter(t=>{const k=`${t.kind}:${t.place}:${t.name}`; if(seen.has(k)) return false; seen.add(k); return true;}).slice(0,4);
+  }
+  function buildTaskCardsHtml(data, opts={}){
+    const tasks = routeTaskCandidates(data);
+    const openClass = opts.open ? " open" : "";
+    if(!tasks.length) return `<div class="post-approve-task-section no-action-tasks${openClass}" id="task-section-${Date.now()}">
+      <div class="task-section-label">暂无后续任务</div>
+      <div class="task-empty-card">✅ 这版路线没有需要预订或领取团购的地点，可以直接按时间轴出发。每个站点的预约与团购状态已融入地点文案中。</div>
+    </div>`;
+    return `<div class="post-approve-task-section${openClass}" id="task-section-${Date.now()}">
+      <div class="task-section-label">可执行的预订/团购任务</div>
+      <div class="task-cards">${tasks.map((t,idx)=>`
+        <div class="task-card">
+          <div class="task-card-top"><div class="task-icon ${esc(t.theme)}"><i class="ti ${esc(t.icon)}"></i></div><span class="tsb tsb-ready">待执行</span></div>
+          <div class="task-name">${esc(t.name)}</div>
+          <div class="task-meta">${esc(t.meta || "待执行")}</div>
+          <button class="task-run-btn" onclick="runApprovedTask(this,'${esc(t.kind)}','${encodeURIComponent(t.place || "")}')"><i class="ti ti-player-play"></i> 执行任务 ↗</button>
+        </div>`).join("")}</div>
+    </div>`;
+  }
+  function buildApproveFlowHtml(data){
+    if(sharedRoomId){
+      const info = roomConfirmationData(data);
+      return `${buildRoomConfirmationHtml(data)}${buildTaskCardsHtml(data,{open:info.all_confirmed})}`;
+    }
+    const hasTasks = routeTaskCandidates(data).length > 0;
+    const copy = hasTasks
+      ? "对这版路线满意吗？确认后我会展开可执行任务，比如预订或领团购券。"
+      : "对这版路线满意吗？这版路线没有需要预订/领券的任务，确认后可以直接按时间轴出发。";
+    return `<div class="approve-bar">
+      <span>${copy}</span>
+      <button class="btn-reject" onclick="rejectApprovedPlan(this)">继续修改</button>
+      <button class="btn-approve" onclick="approveCurrentPlan(this)"><i class="ti ti-check"></i> 确认并继续</button>
+    </div>${buildTaskCardsHtml(data)}`;
+  }
+  function approveCurrentPlan(btn){
+    const bar = btn && btn.closest('.approve-bar');
+    const body = btn && btn.closest('.msg-ai-body');
+    const section = body && body.querySelector('.post-approve-task-section');
+    const noTasks = section && section.classList.contains('no-action-tasks');
+    if(bar){bar.innerHTML = noTasks
+      ? '<span style="color:#0F6E56;display:flex;align-items:center;gap:6px;"><i class="ti ti-circle-check" style="font-size:15px"></i> 行程已确认！这版不用预订，直接照着时间轴走就好。</span>'
+      : '<span style="color:#0F6E56;display:flex;align-items:center;gap:6px;"><i class="ti ti-circle-check" style="font-size:15px"></i> 行程已确认！下面是这版路线可以继续执行的任务。</span>'; }
+    if(section){section.classList.add('open'); setTimeout(()=>section.scrollIntoView({behavior:'smooth', block:'nearest'}),80);}
+  }
+  function rejectApprovedPlan(btn){
+    const bar = btn && btn.closest('.approve-bar');
+    if(bar){bar.innerHTML = '<span style="color:#888780;">没问题，请直接告诉我想怎么改。可以输入“换近一点/换室内/预算低一点”。</span>';}
+    inputEl.focus();
+  }
+  async function runApprovedTask(btn, kind, encodedPlace){
+    const card = btn && btn.closest('.task-card');
+    const badge = card && card.querySelector('.tsb');
+    const place = decodeURIComponent(encodedPlace || '');
+    if(kind === 'coupon' && hasCompletedOrderAction('coupon', place)){
+      if(btn){btn.disabled = true; btn.className='task-run-btn done-btn'; btn.innerHTML='<i class="ti ti-check"></i> 已完成';}
+      if(badge){badge.className='tsb tsb-done'; badge.textContent='已完成';}
+      showOrderInfoModal();
+      return;
+    }
+    if(btn){btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> 执行中…';}
+    if(badge){badge.className='tsb tsb-running'; badge.textContent='执行中';}
+    try{
+      if(kind === 'reserve') await reservePlace(encodeURIComponent(place));
+      else if(kind === 'coupon') await reserveCoupon(encodeURIComponent(place));
+      else if(kind === 'map') openRouteMap();
+      else if(kind === 'export') exportPlan();
+      else if(kind === 'check') showDetailModal('出发前检查', '建议确认三件事：\n1. 营业时间/闭馆通知；\n2. 餐饮或活动余位；\n3. 实时天气与交通。');
+      if(btn){btn.className='task-run-btn done-btn'; btn.innerHTML='<i class="ti ti-check"></i> 已完成';}
+      if(badge){badge.className='tsb tsb-done'; badge.textContent='已完成';}
+    }catch(err){
+      if(btn){btn.disabled = false; btn.innerHTML = '<i class="ti ti-alert-triangle"></i> 重试';}
+      if(badge){badge.className='tsb tsb-ready'; badge.textContent='待执行';}
+      addMsg('bot', `任务执行失败：${err.message || err}`);
+    }
+  }
+
+  function renderTimeline(data, options={}){
+    latestData = data;
+    const plan = data.structured_plan || {};
+    const hard = plan.hard_constraints || {};
+    const schedule = Array.isArray(plan.schedule) ? plan.schedule : [];
+    $("conversation-meta").textContent = routeLogicLabel(hard);
+    const title = schedule.length ? schedule.map(displayName).slice(0,2).join(" + ") : "上海周末出行规划助手";
+    $("route-title").textContent = title;
+    $("meta-date").textContent = hard.date || "本周末";
+    $("meta-stops").textContent = `${schedule.length} 站`;
+    $("meta-duration").textContent = `${hard.duration_hours || 5} 小时`;
+    $("meta-budget").textContent = displayBudget(hard.budget_estimate_text || hard.budget, "预算待定");
+    $("rp-duration").textContent = `${hard.duration_hours || 5} 小时`;
+    $("rp-stops").textContent = schedule.length;
+    $("rp-budget").textContent = displayBudget(hard.budget_estimate_text || hard.budget, "待定");
+    if($("rp-budget-breakdown")) $("rp-budget-breakdown").innerHTML = budgetBreakdown(data).map(esc).join("<br>");
+    $("day-pill").innerHTML = `<i class="ti ti-sun"></i> ${esc(hard.date || "本周末")} · ${esc(hard.time_period || "半日")}`;
+    $("day-duration").textContent = `${hard.duration_hours || 5} 小时`;
+    $("day-distance").textContent = (data.distance_info || "").match(/合计约\s*([^。；\n]+)/)?.[1] || "距离已校验";
+
+    if(!schedule.length){
+      document.querySelectorAll(".route-result-msg").forEach(n=>n.remove());
+      $("timeline").innerHTML = `<div class="empty"><strong>没有返回可用的结构化行程。</strong><br>请检查后端规划结果或重新生成。</div>`;
+      appendRichBotNode(`<div class="chat-route-title"><i class="ti ti-route"></i>结构化路线</div><div class="empty" style="min-height:120px">这次没有返回可用的结构化行程，请检查后端规划结果。</div>`, "route-result-msg");
+      renderRightPanel(data);
+      return;
+    }
+
+    const routeHtml = buildRoomConfirmationHtml(data) + buildGroupConsiderationsHtml(data) + buildConstraintStatusHtml(data) + buildRouteOverviewHtml(data, schedule, hard) + buildInitialTransit(data, schedule, hard) + buildRouteCardsHtml(schedule);
+    $("timeline").innerHTML = routeHtml;
+    renderMap(data.route_map, data.session_id);
+    document.querySelectorAll(".route-result-msg").forEach(n=>n.remove());
+    appendRichBotNode(`
+      <div class="chat-route-title"><i class="ti ti-route"></i>这是为你生成的路线</div>
+      <p>我按你当前的出发地、目的地/区域、预算、人数和快捷调整生成了一版路线。先看精简预览，确认后可以继续执行预订、团购、地图等任务。</p>
+      ${buildInlineRouteCard(schedule, hard)}
+      ${buildApproveFlowHtml(data)}
+    `, "route-result-msg");
+    renderRightPanel(data);
+    if(sharedRoomId && roomConfirmationData(data).all_confirmed){
+      setTimeout(openRoomPostApprovalTasks,0);
+    }
+    if(!options.skipHistory) saveHistory();
+  }
+  function renderMap(routeMap,sessionId){
+    $("map-section").style.display = "block";
+    const markers = (routeMap && routeMap.markers) || [];
+    const markerList = markers.length ? `<div class="map-marker-list">${markers.map(m=>`<span class="map-marker-chip">${esc(m.index)}. ${esc(m.place)}${m.time ? `｜${esc(m.time)}` : ""}</span>`).join("")}</div>` : "";
+    const hasCoords = markers.some(routeMarkerCoord) || routePathPoints(routeMap).length >= 2;
+    if(routeMap && routeMap.available && hasCoords){
+      $("map-wrap").innerHTML = `<div class="map-placeholder">动态路线地图加载中...</div>`;
+      renderDynamicAmap(routeMap, markerList).catch(err=>{
+        showMapFallback(err && err.message ? err.message : "动态路线地图加载失败，请按站点顺序查看路线。");
+      });
+    }else{
+      $("map-wrap").innerHTML = `<div class="map-placeholder">${esc((routeMap&&routeMap.reason)||"路线小地图暂未生成")}${markerList}</div>`;
+    }
+  }
+  async function showMapImageError(url, routeMap){
+    let reason = (routeMap && routeMap.reason) || "地图图片加载失败，请按下方站点顺序查看路线。";
+    try{
+      const res = await fetch(url, {cache:"no-store"});
+      const contentType = res.headers.get("Content-Type") || "";
+      if(contentType.includes("application/json")){
+        const data = await res.json();
+        if(data && data.error) reason = data.error;
+      }else if(!res.ok){
+        const text = await res.text();
+        if(text) reason = `地图图片加载失败：${text.slice(0,120)}`;
+      }
+    }catch(err){
+      reason = `地图图片加载失败：${err && err.message ? err.message : "无法连接地图接口"}`;
+    }
+    showMapFallback(reason);
+  }
+  function showMapFallback(reason){
+    const markers = ((latestData && latestData.route_map && latestData.route_map.markers) || []);
+    const markerList = markers.length ? `<div class="map-marker-list">${markers.map(m=>`<span class="map-marker-chip">${esc(m.index)}. ${esc(m.place)}${m.time ? `｜${esc(m.time)}` : ""}</span>`).join("")}</div>` : "";
+    $("map-wrap").innerHTML = `<div class="map-placeholder">${esc(reason || "地图图片加载失败")}${markerList}</div>`;
+  }
+  window.showMapFallback = showMapFallback;
+  function weatherEmoji(text){
+    const t = String(text || "");
+    if(/雨|阵雨|雷|湿/.test(t)) return "🌧️";
+    if(/晴|太阳|高温|热|晒/.test(t)) return "☀️";
+    if(/云|阴/.test(t)) return "⛅";
+    if(/冷|低温|寒|风/.test(t)) return "🧣";
+    return "🌤️";
+  }
+  function renderWeatherCard(text){
+    const card = $("weather-card");
+    if(!card) return;
+    const summary = String(text || "").trim();
+    if(!summary){
+      card.innerHTML = "🌤️ 天气会在方案生成后自动显示。出发前再看一眼实时天气，路线会更稳。";
+      return;
+    }
+    card.innerHTML = `${weatherEmoji(summary)} ${esc(summary)}
+
+小提醒：按天气带好伞/外套/防晒，临出门前再核验一次实时预报。`;
+  }
+  function renderRightPanel(data){
+    const plan = data.structured_plan || {};
+    const hard = plan.hard_constraints || {};
+    $("plan-section").style.display = "none";
+    $("plan-text").textContent = polishPlanText(data.plan || "暂无最终文案");
+    renderSideTips(data);
+  }
+  function renderSideTips(data){
+    const plan = data.structured_plan || {};
+    const hard = plan.hard_constraints || {};
+    const schedule = Array.isArray(plan.schedule) ? plan.schedule : [];
+    const validation = plan.route_logic_validation || {};
+    const events = Array.isArray(data.exception_events) ? data.exception_events : (validation.exception_events || []);
+    const conflicts = Array.isArray(data.adjustment_conflicts) ? data.adjustment_conflicts : (validation.adjustment_conflicts || []);
+    const weather = String(hard.weather_reference || "").trim();
+    if($("tip-crowds")) $("tip-crowds").textContent = localCrowdTip(data);
+    if($("tip-weather")) $("tip-weather").textContent = weather ? `${weatherEmoji(weather)} ${weather}` : "天气会在方案生成后自动显示；出门前再看一眼实时预报。";
+    if($("tip-queue")) $("tip-queue").textContent = [queueHackTip(data)].concat(events.slice(0,1).map(e=>cleanInventoryText(e.message || e)), conflicts.slice(0,1)).filter(Boolean).join("\n");
+    if($("tip-budget")) $("tip-budget").innerHTML = budgetBreakdown(data).map(esc).join("<br>");
+  }
+  function polishPlanText(text){
+    const raw = String(text || "").trim();
+    if(!raw || raw === "暂无最终文案") return raw;
+    const alreadyLively = /无脑冲|氛围感|姐妹|宝子|真的|直接/.test(raw);
+    if(alreadyLively) return raw;
+    return [
+      "周末不知道去哪？这条路线可以直接抄作业！✨",
+      "不想做攻略的话，这版就按“少折腾、能吃能逛、转场别太累”的思路来安排，适合直接照着走。",
+      "",
+      raw,
+      "",
+      "小提示：出发前再看一眼营业时间和余位；如果想更近、更便宜、换室内或优先团购，直接在下面一句话告诉我就行。"
+    ].join("\n");
+  }
+  function updateRoomUi(){
+    const roomMode = Boolean(sharedRoomId);
+    if($("group-label-text")) $("group-label-text").textContent = roomMode ? `群聊中 · ${roomSpeaker || "群友"}` : "";
+  }
+  function interestText(){
+    const interests = selectedInterests();
+    return interests.length ? `兴趣偏好：${interests.join("、")}` : "";
+  }
+  function stripInterestText(text){
+    return String(text || "")
+      .replace(/（?兴趣偏好：[^）\n]+）?/g, "")
+      .replace(/\s{2,}/g, " ")
+      .replace(/Interests:.*$/g, "")
+      .trim();
+  }
+  function syncInterestsToInput(){
+    updateInterestCount();
+    renderInterestTags();
+    inputEl.focus();
+  }
+
+  function renderInterestTags(){
+    const wrap = $("chat-input-wrap") || (inputEl && inputEl.parentElement);
+    if(!wrap) return;
+    wrap.querySelectorAll(".interest-tag").forEach(el=>el.remove());
+    const selected = Array.from(document.querySelectorAll("#igrid .int-chip.on"));
+    selected.forEach(chip=>{
+      const label = chip.querySelector("span")?.textContent.trim() || "兴趣";
+      const icon = chip.getAttribute("data-icon") || chip.querySelector("i")?.className.replace("ti ","") || "ti-sparkles";
+      const pill = document.createElement("span");
+      pill.className = "active-tag interest-tag";
+      pill.innerHTML = `<i class="ti ${esc(icon)}"></i>${esc(label)} <i class="ti ti-x"></i>`;
+      pill.onclick = () => { chip.classList.remove("on"); updateInterestCount(); renderInterestTags(); inputEl.focus(); };
+      wrap.insertBefore(pill, inputEl);
+    });
+  }
+  function updateInterestCount(){
+    const n = document.querySelectorAll("#igrid .int-chip.on").length;
+    if($("i-cnt")) $("i-cnt").textContent = n;
+  }
+  function buildPromptForBackend(text){
+    const interests = selectedInterests();
+    const hints = [];
+    if(interests.length) hints.push(`兴趣偏好：${interests.join("、")}`);
+    return [text, hints.length ? `（${hints.join("；")}）` : ""].filter(Boolean).join(" ").trim();
+  }
+  async function sendMessage(){
+    const text = inputEl.value.trim();
+    if(!text && !selectedInterests().length) return;
+    const visibleText = [text, selectedInterests().length ? `兴趣：${selectedInterests().join("、")}` : ""].filter(Boolean).join("｜");
+    const backendText = buildPromptForBackend(text || "请根据我的兴趣偏好生成路线");
+    if(!sharedRoomId)addMsg("user", visibleText);
+    inputEl.value = "";
+    document.querySelectorAll(".quick-btn.selected").forEach(b=>b.classList.remove("selected"));
+    await callPlan(backendText);
+  }
+  async function runInlineTask(button, encodedPrompt){
+    const prompt = decodeURIComponent(encodedPrompt || "");
+    if(!prompt)return;
+    if(button){
+      button.classList.add("done");
+      button.innerHTML = '<i class="ti ti-loader"></i> 查询中';
+    }
+    addMsg("user", prompt);
+    await callPlan(prompt);
+    if(button){
+      button.innerHTML = '<i class="ti ti-check"></i> 已查询';
+    }
+  }
+  function shouldShowPlanningProgressForRequest(){
+    // 当前产品不再做缺项追问；首轮输入也会直接进入需求识别和方案生成，所以始终展示规划进度。
+    return true;
+  }
+
+  async function callPlan(text){
+    // 单人/多人共用发送入口：
+    // 单人直接等待 /plan；多人先写房间事件，@Agent 或首版后修改才触发规划。
+    setBusy(true);
+    let progressState = null;
+    const roomPlanningRequested = Boolean(sharedRoomId && /@(?:agent|ai)/i.test(text));
+    if(roomPlanningRequested){
+      // @Agent 开始规划后立即停掉群聊事件轮询，避免 ngrok 多端同时拉取事件把长规划请求挤出连接。
+      stopEventPolling();
+      stopSharedPlanResultWatch();
+      sharedPlanningAckShown = false;
+      addMsg("user", `${roomSpeaker || "我"}: ${text}`);
+      showSharedPlanningStarted();
+      progressState = sharedPlanningProgressState;
+    }else if(shouldShowPlanningProgressForRequest()) progressState = appendPlanningProgressNode();
+    try{
+      const body = {user_input:text, client_id:clientId};
+      if(currentSessionId) body.session_id = currentSessionId;
+      if(sharedRoomId) body.room_id = sharedRoomId;
+      if(sharedRoomId) body.speaker = roomSpeaker || "群友";
+      const res = await fetch(`${API_BASE}/plan`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(body)});
+      let data = {};
+      try{
+        data = await res.json();
+      }catch(_){
+        const raw = await res.text().catch(()=>"");
+        data = {error: raw || `HTTP ${res.status}`};
+      }
+      if(!res.ok){finishPlanningProgress(progressState, data, false, `后端接口出错：${data.error || res.status}`);addMsg("bot",`后端接口出错：${data.error || res.status}`);return;}
+      if(data.error){finishPlanningProgress(progressState, data, false, `出错了：${data.error}`);addMsg("bot",`出错了：${data.error}`);return;}
+      currentSessionId = data.session_id || currentSessionId;
+      applyRoomSnapshot(data);
+      if(data.status === "group_chat"){removePlanningProgress(progressState);if(sharedRoomId)await pollSessionEvents(true);return;}
+      if(data.status === "planning"){
+        removePlanningProgress(progressState);
+        if(data.message)addMsg("bot",data.message);
+        if(sharedRoomId)startSharedPlanResultWatch();
+        return;
+      }
+      if(data.status === "need_info"){awaitingRequiredInfo = true;removePlanningProgress(progressState);addMsg("bot",data.question || "请补充信息。");return;}
+      if(data.status === "satisfied"){removePlanningProgress(progressState);addMsg("bot",data.message || "已记录满意。");return;}
+      if(data.status === "reservation_pending" || data.status === "trip_ready"){removePlanningProgress(progressState);recordOrderInfo("reserve", data.place_name || "当前路线", data, "已更新预约状态。");return;}
+      if(data.status === "plan_ready"){
+        awaitingRequiredInfo = false;
+        if(data.last_event_id)lastEventId=Math.max(lastEventId,Number(data.last_event_id)||0);
+        stopSharedPlanResultWatch();
+        if(sharedRoomId) stopEventPolling();
+        if(!progressState) progressState = sharedPlanningProgressState || appendPlanningProgressNode();
+        finishPlanningProgress(progressState, data, true);
+        if(sharedPlanningProgressState === progressState)sharedPlanningProgressState = null;
+        addMsg("bot", `方案已生成，${planGenerationTimeText(data)}`);
+        renderTimeline(data);
+        if(sharedRoomId)startConfirmationPolling();
+        // 长方案文案已经融合进 Itinerary 时间轴卡片；聊天框只保留精简预览，避免刷屏。
+        if(data.satisfaction_question)addMsg("bot",data.satisfaction_question);
+        return;
+      }
+      finishPlanningProgress(progressState, data, false, "返回了未识别状态。");
+      addMsg("bot",JSON.stringify(data,null,2));
+    }catch(err){
+      finishPlanningProgress(progressState, {}, false, `请求失败：${err.message}`);
+      addMsg("bot",`请求失败：${err.message}`);
+      if(roomPlanningRequested && currentSessionId) startSharedPlanResultWatch();
+    }
+    finally{setBusy(false);inputEl.focus();}
+  }
+  async function reserveCoupon(encodedPlaceName){
+    if(!currentSessionId){recordOrderInfo("error", "Current route", {}, "Session expired. Please generate a route first."); return null;}
+    const placeName = decodeURIComponent(encodedPlaceName || "");
+    if(hasCompletedOrderAction("coupon", placeName)){
+      updateOrderInfoButton();
+      return {status:"already_claimed", message:"This coupon has already been claimed for this route."};
+    }
+    try{
+      const res = await fetch(`${API_BASE}/reserve_coupon`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session_id:currentSessionId,place_name:placeName})});
+      const data = await res.json();
+      if(data && data.error){
+        recordOrderInfo("error", placeName, data, data.error);
+      }else{
+        recordOrderInfo("coupon", placeName, data, "Coupon information updated.");
+      }
+      return data;
+    }catch(err){
+      recordOrderInfo("error", placeName, {}, `Coupon claim failed: ${err.message}`);
+      return null;
+    }
+  }
+  async function reservePlace(encodedPlaceName){
+    if(!currentSessionId){recordOrderInfo("error", "Current route", {}, "Session expired. Please generate a route first."); return null;}
+    const placeName = decodeURIComponent(encodedPlaceName || "");
+    try{
+      const res = await fetch(`${API_BASE}/reserve_place`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({session_id:currentSessionId,place_name:placeName})});
+      const data = await res.json();
+      recordOrderInfo("reserve", placeName, data && data.error ? {error:data.error} : data, data && data.error ? data.error : "Reservation information updated.");
+      return data;
+    }catch(err){
+      recordOrderInfo("error", placeName, {}, `Reservation failed: ${err.message}`);
+      return null;
+    }
+  }
+  async function sendQuick(text,btn){
+    if(btn)btn.classList.add("selected");
+    // 已经有方案时，快捷按钮就是一次明确的修改请求；不要只把文字塞进输入框。
+    if(currentSessionId && latestData){
+      addMsg("user", text);
+      await callPlan(buildPromptForBackend(text));
+      return;
+    }
+    const parts = inputEl.value.trim() ? inputEl.value.trim().split(/\s*[，,、]\s*/).filter(Boolean) : [];
+    const exists = parts.includes(text);
+    inputEl.value = (exists ? parts.filter(x=>x!==text) : [...parts,text]).join("，");
+    if(btn)btn.classList.toggle("selected",!exists);
+    inputEl.focus();
+  }
+  let regenerateInFlight = false;
+  async function regenerateRoute(btn){
+    const prompt = "重新生成一版不同路线：保留当前已确认的路线约束，替换上一版非锁定站点，避免原样返回。";
+    if(regenerateInFlight) return;
+    if(!currentSessionId || !latestData){
+      inputEl.value = prompt;
+      inputEl.focus();
+      return;
+    }
+    regenerateInFlight = true;
+    if(btn){btn.disabled = true; btn.innerHTML = '<i class="ti ti-loader"></i> Regenerating';}
+    try{
+      addMsg("user", "重新生成一版不同路线");
+      await callPlan(buildPromptForBackend(prompt));
+    }finally{
+      regenerateInFlight = false;
+      if(btn){btn.disabled = false; btn.innerHTML = '<i class="ti ti-refresh"></i> Regenerate ↗';}
+    }
+  }
+
+  function planGenerationTimeText(data){
+    const shown = data && data.generation_time_seconds;
+    if(shown === undefined || shown === null || shown === "") return "用时 - 秒";
+
+    const over = data && data.generation_time_over_limit;
+    const excluded = Number(data && (
+      data.generation_time_excluded_seconds ||
+      data.amap_route_generation_seconds ||
+      0
+    ));
+    const actual = Number(data && data.generation_time_actual_seconds);
+
+    let text = `用时 ${shown} 秒`;
+    if(Number.isFinite(excluded) && excluded > 0){
+      text += `（已排除高德路线/地图 ${excluded.toFixed(2)} 秒`;
+      if(Number.isFinite(actual) && actual > 0){
+        text += `，实际请求 ${actual.toFixed(2)} 秒`;
+      }
+      text += `）`;
+    }
+    text += over ? "。已超过30秒目标。" : "。满足30秒目标。";
+    return text;
+  }
+
+  async function sendPrompt(text){
+    if(currentSessionId && latestData){
+      addMsg("user", text);
+      await callPlan(buildPromptForBackend(text));
+      return;
+    }
+    inputEl.value = text;
+    inputEl.focus();
+  }
+  function resetUi(){
+    stopRoomEventStream();
+    stopSharedPlanResultWatch();
+    currentSessionId = null;
+    latestData = null;
+    awaitingRequiredInfo = false;
+    lastEventId = 0;
+    sharedRoomId = "";
+    sharedPlanningAckShown = false;
+    sharedPlanningProgressState = null;
+    renderedRoomEventIds.clear();
+    roomParticipants = [];
+    roomJoined = false;
+    stopEventPolling();
+    inputEl.value = "";
+    document.querySelectorAll(".quick-btn.selected").forEach(b=>b.classList.remove("selected"));
+    $("route-title").textContent = "上海周末出行规划助手";
+    $("meta-date").textContent = "等待规划";
+    $("meta-stops").textContent = "0 站";
+    $("meta-duration").textContent = "4-6 小时";
+    $("meta-budget").textContent = "预算待定";
+    $("day-pill").innerHTML = '<i class="ti ti-sun"></i> 输入需求后生成路线';
+    $("day-duration").textContent = "4-6 小时";
+    $("day-distance").textContent = "距离待计算";
+    $("timeline").innerHTML = `<div class="empty"><div><strong>先告诉我你的出行时间和同行人群。</strong><br>例如：周六下午2点，和爸妈三个人从嘉定出发，想室内轻松一点，人均200以内。<br>生成后这里会变成新版时间轴、转场、任务按钮和路线地图。</div></div>`;
+    $("rp-duration").textContent = "4-6 小时";
+    $("rp-stops").textContent = "0";
+    $("rp-budget").textContent = "待定";
+    $("summary-card").style.display = "none";
+    $("map-section").style.display = "none";
+    $("plan-section").style.display = "none";
+    if($("tip-crowds")) $("tip-crowds").textContent = "生成方案后显示人流量建议。";
+    if($("tip-weather")) $("tip-weather").textContent = "天气会在方案生成后自动显示。";
+    if($("tip-queue")) $("tip-queue").textContent = "生成方案后给出排队/余位建议。";
+    if($("tip-budget")) $("tip-budget").textContent = "预算会随本次路线更新。";
+    if($("rp-budget-breakdown")) $("rp-budget-breakdown").innerHTML = "来自本次方案<br>随生成结果更新";
+    $("plan-text").textContent = "最终小红书文案会显示在这里，时间轴会根据后端返回的结构化行程渲染。";
+    $("chat-log").innerHTML = "";
+    currentMessages = [];
+    $("conversation-meta").textContent = "当前会话";
+    addMsg("bot",WELCOME_TEXT);
+    updateRoomUi();
+  }
+  function toggleDD(id){["i","p","q"].forEach(k=>{const p=$(`panel-${k}`),b=$(`btn-${k}`);if(!p||!b)return;const open=k===id && !p.classList.contains("open");p.classList.toggle("open",open);b.classList.toggle("open",open);});}
+  function selectedInterests(){
+    return Array.from(document.querySelectorAll("#igrid .int-chip.on span"))
+      .map(el=>el.textContent.trim())
+      .filter(Boolean);
+  }
+  function togInt(el){
+    el.classList.toggle("on");
+    syncInterestsToInput();
+  }
+  function toggleTransit(id){const el=$(id);const pop=el.querySelector(".transport-popup");const open=pop.classList.contains("open");document.querySelectorAll(".transport-popup").forEach(p=>p.classList.remove("open"));if(!open)pop.classList.add("open");}
+  async function copyShareLink(){
+    // Share：复制当前方案分享链接；用于查看已生成方案，不负责群聊协作。
+    if(!currentSessionId || !latestData || !latestData.structured_plan){
+      addMsg("bot","请先生成方案，再点击“分享”获取分享链接。");
+      return;
+    }
+    const room = currentSessionId.startsWith("room:") ? currentSessionId.replace("room:","") : "";
+    const url = new URL(location.href);
+    if(room){url.searchParams.set("room",room);url.searchParams.delete("session_id");}
+    else url.searchParams.set("session_id",currentSessionId);
+    try{await navigator.clipboard.writeText(url.toString());addMsg("bot","方案分享链接已复制。");}catch(_){addMsg("bot",`方案分享链接：${url.toString()}`);}
+    collaborationActive = true;startEventPolling();
+  }
+  function collaborationUrl(roomId, lanIp, publicBaseUrl){
+    if(publicBaseUrl)return `${String(publicBaseUrl).replace(/\/+$/,"")}/?room=${encodeURIComponent(roomId)}`;
+    // 页面本身通过 ngrok/公网域名打开时，必须复用当前 origin；不能再拼局域网 IP 或 :8041。
+    if(location.protocol !== "file:"){
+      return `${location.origin}/?room=${encodeURIComponent(roomId)}`;
+    }
+    const port = location.port || "8041";
+    const host = lanIp && lanIp !== "127.0.0.1" ? lanIp : "127.0.0.1";
+    return `http://${host}:${port}/?room=${encodeURIComponent(roomId)}`;
+  }
+  async function createCollaborationRoom(){
+    // Collaborate：创建协作房间，生成 room 链接，群友打开后可实时群聊。
+    const speaker = (prompt("请输入你在群聊中的昵称：", roomSpeaker || "发起人") || "").trim();
+    if(!speaker)return;
+    try{
+      const res = await fetch(`${API_BASE}/rooms`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({client_id:clientId,speaker})});
+      const data = await res.json();
+      if(!res.ok || data.error){addMsg("bot",`协作房间创建失败：${data.error || res.status}`);return;}
+      resetUi();
+      roomSpeaker = speaker;
+      localStorage.setItem("localmate_room_speaker", roomSpeaker);
+      sharedRoomId = data.room_id;
+      currentSessionId = data.session_id;
+      roomParticipants = data.participants || [];
+      roomJoined = true;
+      collaborationActive = true;
+      lastEventId = Number(data.last_event_id) || 0;
+      updateRoomUi();
+      startRoomSynchronization();
+      const url = collaborationUrl(data.room_id, data.lan_ip, data.public_base_url);
+      try{await navigator.clipboard.writeText(url);addMsg("bot",`协作房间已创建，局域网邀请链接已复制：\n${url}\n群友可以先自由聊天；讨论结束后，任意成员发送“@Agent 开始规划”。`);}
+      catch(_){addMsg("bot",`协作房间已创建，请把这个局域网链接发给群友：\n${url}\n讨论结束后，任意成员发送“@Agent 开始规划”。`);}
+    }catch(err){
+      addMsg("bot",`协作房间创建失败：${err.message}`);
+    }
+  }
+  async function joinSharedRoom(){
+    if(!sharedRoomId)return;
+    const speaker = (prompt("请输入你在群聊中的昵称：", roomSpeaker || "") || "").trim();
+    if(!speaker){addMsg("bot","需要输入昵称后才能加入协作群聊。");return;}
+    try{
+      const res = await fetch(`${API_BASE}/rooms/${encodeURIComponent(sharedRoomId)}/join`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({client_id:clientId,speaker})});
+      const data = await res.json();
+      if(!res.ok || data.error){addMsg("bot",`加入协作房间失败：${data.error || res.status}`);return;}
+      roomSpeaker = speaker;
+      localStorage.setItem("localmate_room_speaker", roomSpeaker);
+      currentSessionId = data.session_id;
+      roomParticipants = data.participants || [];
+      roomJoined = true;
+      collaborationActive = true;
+      updateRoomUi();
+      await loadRoomHistory();
+      startRoomSynchronization();
+    }catch(err){
+      addMsg("bot",`加入协作房间失败：${err.message}`);
+    }
+  }
+  function hasRenderablePlan(data){
+    const plan = data && data.structured_plan;
+    return Boolean(plan && Array.isArray(plan.schedule) && plan.schedule.length);
+  }
+  function showSharedPlanningStarted(message="已收到 @Agent 指令。我会按聊天顺序汇总每位群友的需求，并开始生成方案。"){
+    if(!sharedPlanningAckShown){
+      addMsg("bot",message);
+      sharedPlanningAckShown = true;
+    }
+    if(!sharedPlanningProgressState) sharedPlanningProgressState = appendPlanningProgressNode();
+  }
+  function markSharedPlanReady(payload, source="event"){
+    if(!payload || !hasRenderablePlan(payload))return false;
+    latestData = payload;
+    applyRoomSnapshot(payload);
+    awaitingRequiredInfo = false;
+    if(sharedPlanningProgressState){
+      finishPlanningProgress(sharedPlanningProgressState, payload, true);
+      sharedPlanningProgressState = null;
+    }
+    renderTimeline(payload);
+    stopEventPolling();
+    stopSharedPlanResultWatch();
+    sharedPlanningAckShown = false;
+    if(sharedRoomId)startConfirmationPolling();
+    if(source !== "direct"){
+      addMsg("bot", `方案已同步完成，${planGenerationTimeText(payload)}`);
+      if(payload.satisfaction_question)addMsg("bot",payload.satisfaction_question);
+    }
+    return true;
+  }
+  function handleSharedEvent(ev, options={}){
+    // 处理房间事件：聊天消息、planning_started、plan_ready、确认状态都从这里分发。
+    const eventId = Number(ev.id) || 0;
+    if(eventId && renderedRoomEventIds.has(eventId))return;
+    if(eventId)renderedRoomEventIds.add(eventId);
+    const payload = ev.payload || {};
+    if(payload.status === "planning_started"){
+      applyRoomSnapshot(payload);
+      showSharedPlanningStarted(ev.text || undefined);
+      stopEventPolling();
+      startSharedPlanResultWatch();
+      return;
+    }
+    if(payload.status === "room_confirmation"){
+      applyRoomSnapshot(payload);
+    }
+    if(payload.status === "plan_ready" && hasRenderablePlan(payload)){
+      markSharedPlanReady(payload);
+      return;
+    }
+    const ownOptimisticAgentMessage=ev.role==="user"&&ev.client_id===clientId&&/@(?:agent|ai)/i.test(ev.text||"")&&!options.includeSelf;
+    if(!ownOptimisticAgentMessage)addMsg(ev.role === "user" ? "user" : "bot", `${ev.speaker ? ev.speaker + ": " : ""}${ev.text || ""}`, {skipHistory:false});
+    if(payload.status === "planning_failed"){
+      finishPlanningProgress(sharedPlanningProgressState, payload, false, payload.error || ev.text || "规划失败");
+      sharedPlanningProgressState = null;
+      stopEventPolling();
+      stopSharedPlanResultWatch();
+    }
+  }
+  async function loadRoomHistory(){
+    // 加入房间后拉取完整历史，确保新成员能看到此前群聊记录。
+    if(!currentSessionId)return;
+    const res = await fetch(`${API_BASE}/events/${encodeURIComponent(currentSessionId)}?since=0`);
+    const data = await res.json();
+    if(!res.ok || !data.exists)return;
+    $("chat-log").innerHTML = "";
+    currentMessages = [];
+    renderedRoomEventIds.clear();
+    (data.events || []).forEach(ev=>handleSharedEvent(ev,{includeSelf:true}));
+    applyRoomSnapshot(data);
+    lastEventId = Number(data.last_event_id) || 0;
+    if(data.planning_in_progress && !hasRenderablePlan(latestData)){
+      showSharedPlanningStarted();
+      stopEventPolling();
+      startSharedPlanResultWatch();
+    }
+  }
+  async function restoreSharedPlan(){
+    // 打开分享/协作链接时恢复已有方案；如果仍在规划中，则进入等待同步。
+    if(!currentSessionId)return;
+    try{
+      const res = await fetch(`${API_BASE}/session/${encodeURIComponent(currentSessionId)}`);
+      const data = await res.json();
+      if(!res.ok || !data.exists){
+        addMsg("bot","分享链接中的方案已失效，请重新生成。");
+        return;
+      }
+      currentSessionId = data.session_id || currentSessionId;
+      lastEventId = Number(data.last_event_id) || 0;
+      applyRoomSnapshot(data);
+      if(hasRenderablePlan(data)){
+        markSharedPlanReady(data, "direct");
+        addMsg("bot","已加载分享方案。");
+        return;
+      }
+      if(data.planning_in_progress || data.status === "planning"){
+        addMsg("bot","该协作房间正在生成方案，已进入等待同步。");
+        showSharedPlanningStarted();
+        stopEventPolling();
+        startSharedPlanResultWatch();
+        return;
+      }
+      addMsg("bot","分享链接对应的会话还没有可展示方案。");
+      collaborationActive = true;
+      startEventPolling();
+    }catch(err){
+      addMsg("bot",`分享方案加载失败：${err.message}`);
+    }
+  }
+  async function fetchSharedPlanSnapshot(showErrors=false){
+    // 作为分享链接首次打开和规划阶段异常恢复的轻量兜底读取。
+    if(!currentSessionId)return false;
+    try{
+      const res = await fetch(`${API_BASE}/session/${encodeURIComponent(currentSessionId)}`);
+      const data = await res.json();
+      if(!res.ok || !data.exists)return false;
+      currentSessionId = data.session_id || currentSessionId;
+      if(data.last_event_id)lastEventId=Math.max(lastEventId,Number(data.last_event_id)||0);
+      sharedResultWatchFailures = 0;
+      applyRoomSnapshot(data);
+      if(hasRenderablePlan(data))return markSharedPlanReady(data);
+      if(data.planning_failed || data.status === "planning_failed"){
+        finishPlanningProgress(sharedPlanningProgressState, data, false, data.error || "规划失败");
+        stopSharedPlanResultWatch();
+        return false;
+      }
+      return false;
+    }catch(err){
+      sharedResultWatchFailures += 1;
+      if(showErrors){
+        addMsg("bot",`方案同步暂时失败：${err.message}。请确认所有人都使用同一个 ngrok/公网链接，或稍后点击“分享”重新打开。`);
+      }
+      return false;
+    }
+  }
+  function startSharedPlanSnapshotFallback(){
+    // SSE 仍是主通道。低频快照用于恢复代理保持连接却没有及时推送最终事件的情况。
+    if(sharedPlanSnapshotTimer || !currentSessionId)return;
+    sharedPlanSnapshotTimer=setInterval(()=>fetchSharedPlanSnapshot(false),5000);
+  }
+  function stopSharedPlanSnapshotFallback(){
+    if(sharedPlanSnapshotTimer){clearInterval(sharedPlanSnapshotTimer);sharedPlanSnapshotTimer=null;}
+  }
+  function startSharedPlanResultWatch(){
+    // @Agent 后等待最终方案：优先 SSE，另用低频 /session 快照兜底。
+    // @Agent 开始后，前端普通轮询已经停止。这里改为一条 SSE 长连接等待最终 plan_ready，
+    // 并每 5 秒读取一次轻量快照兜底，不触发重新规划。
+    if(!currentSessionId)return;
+    startSharedPlanSnapshotFallback();
+    // 协作房间已经有持续 SSE 订阅，无需再为规划结果建立第二条连接。
+    if(roomEventSource)return;
+    if(sharedPlanEventSource)return;
+    if(typeof EventSource !== "function"){
+      fetchSharedPlanSnapshot(false);
+      return;
+    }
+    sharedResultWatchFailures = 0;
+    const url = `${API_BASE}/events_stream/${encodeURIComponent(currentSessionId)}?since=${lastEventId}`;
+    sharedPlanEventSource = new EventSource(url);
+    sharedPlanEventSource.onmessage = (message) => {
+      try{
+        const data = JSON.parse(message.data || "{}");
+        if(data.last_event_id)lastEventId=Math.max(lastEventId,Number(data.last_event_id)||0);
+        if(data.event){
+          handleSharedEvent(data.event);
+          applyRoomSnapshot(data);
+          const payload = data.event.payload || {};
+          if(payload.status === "plan_ready" || payload.status === "planning_failed")stopSharedPlanResultWatch();
+          return;
+        }
+        if(data.status === "ended" || data.exists === false)stopSharedPlanResultWatch();
+      }catch(err){
+        console.warn("SSE parse failed", err);
+      }
+    };
+    sharedPlanEventSource.onerror = () => {
+      sharedResultWatchFailures += 1;
+      fetchSharedPlanSnapshot(false);
+      // EventSource 会自动重连；连续失败时只提示一次，避免刷屏。
+      if(sharedResultWatchFailures === 4){
+        addMsg("bot","方案同步连接暂时不稳定；已停止普通轮询，正在等待 SSE 自动重连。请确认大家都使用同一个 ngrok 链接。");
+      }
+    };
+  }
+  function stopSharedPlanResultWatch(){
+    if(sharedPlanEventSource){sharedPlanEventSource.close();sharedPlanEventSource=null;}
+    stopSharedPlanSnapshotFallback();
+  }
+  function stopRoomEventStream(){
+    if(roomEventReconnectTimer){clearTimeout(roomEventReconnectTimer);roomEventReconnectTimer=null;}
+    if(roomEventSource){roomEventSource.close();roomEventSource=null;}
+  }
+  function scheduleRoomEventStreamReconnect(){
+    if(roomEventReconnectTimer || !sharedRoomId || !roomJoined || !currentSessionId)return;
+    roomEventReconnectTimer=setTimeout(()=>{
+      roomEventReconnectTimer=null;
+      startRoomEventStream();
+    },1500);
+  }
+  function startRoomEventStream(){
+    // 协作房间常驻事件流；所有成员的消息、确认、方案状态都从这里同步。
+    if(roomEventSource || !sharedRoomId || !roomJoined || !currentSessionId)return;
+    if(typeof EventSource !== "function"){
+      startEventPolling(1800);
+      return;
+    }
+    const url = `${API_BASE}/events_stream/${encodeURIComponent(currentSessionId)}?since=${lastEventId}&continuous=true`;
+    const source = new EventSource(url);
+    roomEventSource = source;
+    source.onopen = () => {
+      if(roomEventSource === source && !sharedPlanningProgressState)startEventPolling(5000);
+    };
+    source.onmessage = (message) => {
+      try{
+        const data = JSON.parse(message.data || "{}");
+        if(data.last_event_id)lastEventId=Math.max(lastEventId,Number(data.last_event_id)||0);
+        if(data.event)handleSharedEvent(data.event);
+        applyRoomSnapshot(data);
+        if(data.status === "ended" || data.exists === false){
+          roomJoined = false;
+          stopRoomEventStream();
+        }
+      }catch(err){
+        console.warn("Room SSE parse failed", err);
+      }
+    };
+    source.onerror = () => {
+      if(roomEventSource !== source)return;
+      source.close();
+      roomEventSource = null;
+      startEventPolling(1800);
+      pollSessionEvents(true);
+      scheduleRoomEventStreamReconnect();
+    };
+  }
+  function startRoomSynchronization(){
+    if(!sharedRoomId || !roomJoined || !currentSessionId)return;
+    startRoomEventStream();
+    // SSE 是主通道；低频轮询用于代理断连或浏览器休眠后的恢复。
+    startEventPolling(roomEventSource ? 5000 : 1800);
+  }
+  async function pollSessionEvents(force=false){
+    if((!collaborationActive && !force) || !currentSessionId)return;
+    try{
+      const res = await fetch(`${API_BASE}/events/${encodeURIComponent(currentSessionId)}?since=${lastEventId}`);
+      const data = await res.json();
+      if(!data.exists || data.ended){stopEventPolling();return;}
+      if(data.planning_in_progress && !(data.events || []).length){
+        applyRoomSnapshot(data);
+        showSharedPlanningStarted();
+        stopEventPolling();
+        startSharedPlanResultWatch();
+        return;
+      }
+      (data.events||[]).forEach(ev=>{lastEventId=Math.max(lastEventId,Number(ev.id)||0);handleSharedEvent(ev);});
+      applyRoomSnapshot(data);
+      if(data.last_event_id)lastEventId=Math.max(lastEventId,Number(data.last_event_id)||0);
+    }catch(_){}
+  }
+  function startEventPolling(intervalMs=1800){collaborationActive=true;if(pollTimer&&pollIntervalMs===intervalMs)return;if(pollTimer)clearInterval(pollTimer);pollIntervalMs=intervalMs;pollTimer=setInterval(pollSessionEvents,intervalMs);pollSessionEvents();}
+  function startConfirmationPolling(){startEventPolling(3000);}
+  function stopEventPolling(){collaborationActive=false;pollIntervalMs=0;if(pollTimer){clearInterval(pollTimer);pollTimer=null;}}
+
+  async function downloadPlanPng(){
+    if(!latestData || !latestData.structured_plan){
+      addMsg("bot","当前还没有可下载的方案，请先生成路线。");
+      return;
+    }
+    const oldTab = document.querySelector(".pane.active")?.id || "pane-chat";
+    switchTab("route",{skipScroll:true});
+    await new Promise(resolve=>setTimeout(resolve,260));
+    const target = $("pane-route");
+    if(!target){addMsg("bot","未找到方案区域，暂时无法下载。");return;}
+    try{
+      if(typeof html2canvas !== "function"){
+        addMsg("bot","图片下载组件未加载完成，请稍后再试。");
+        return;
+      }
+      const canvas = await html2canvas(target,{
+        backgroundColor:"#F7F6FC",
+        scale:2,
+        useCORS:true,
+        windowWidth:document.documentElement.scrollWidth,
+        windowHeight:target.scrollHeight
+      });
+      const link = document.createElement("a");
+      const title = (($("route-title")||{}).textContent || "出行方案").replace(/[\\/:*?"<>|]+/g,"_").slice(0,40);
+      link.download = `${title || "出行方案"}.png`;
+      link.href = canvas.toDataURL("image/png");
+      link.click();
+    }catch(err){
+      console.error(err);
+      addMsg("bot","图片下载失败，可能是浏览器跨域图片限制。你也可以先使用浏览器截图。");
+    }finally{
+      if(oldTab === "pane-chat") switchTab("chat",{skipScroll:true});
+    }
+  }
+
+  function exportPlan(){
+    const blob = new Blob([JSON.stringify(latestData || {},null,2)],{type:"application/json"});
+    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download="出行方案.json";a.click();URL.revokeObjectURL(a.href);
+  }
+
+  function switchTab(id, options={}){
+    ["chat","route"].forEach(k=>{
+      const tab=$("tab-"+k), pane=$("pane-"+k);
+      if(tab) tab.classList.toggle("active", k===id);
+      if(pane) pane.classList.toggle("active", k===id);
+    });
+    document.documentElement.scrollTop = 0;
+    document.body.scrollTop = 0;
+    if(id === "chat"){
+      const chatPane = $("pane-chat");
+      const log = $("chat-log");
+      if(chatPane) chatPane.scrollTop = 0;
+      if(log) log.scrollTop = log.scrollHeight;
+    }else if(!options.preserveScroll){
+      const routePane = $("pane-route");
+      if(routePane) routePane.scrollTop = 0;
+    }
+  }
+  document.addEventListener("click",function(e){
+    if(!e.target.closest(".pref-dd")){
+      ["i","p","q"].forEach(k=>{
+        const p=$("panel-"+k), b=$("btn-"+k);
+        if(p) p.classList.remove("open");
+        if(b) b.classList.remove("open");
+      });
+    }
+  });
+
+  currentMessages = [{role:"bot",text:WELCOME_TEXT,time:Date.now()}];
+  renderHistoryList();
+  updateOrderInfoButton();
+  $("history-list").addEventListener("click",(e)=>{
+    const item = e.target.closest("[data-history-id]");
+    if(item) loadHistory(item.getAttribute("data-history-id"));
+  });
+  $("send-btn").addEventListener("click",sendMessage);
+  inputEl.addEventListener("keydown",(e)=>{if(e.key==="Enter"){e.preventDefault();sendMessage();}});
+  $("new-plan").addEventListener("click",resetUi);
+  if($("download-png-btn")) $("download-png-btn").addEventListener("click",downloadPlanPng);
+  if($("share-btn")) $("share-btn").addEventListener("click",copyShareLink);
+  if($("collab-btn")) $("collab-btn").addEventListener("click",createCollaborationRoom);
+  if($("export-btn")) $("export-btn").addEventListener("click",exportPlan);
+  if($("map-focus-btn")) $("map-focus-btn").addEventListener("click",openRouteMap);
+  updateRoomUi();
+  if(sharedRoomId)joinSharedRoom();
+  else if(collaborationActive && currentSessionId)restoreSharedPlan();
+</script>
+</body>
+</html>
