@@ -1,8 +1,8 @@
-# LocalMate Agent 4 提交说明
+# LocalMate Agent 提交说明
 
 ## 1. 项目简介
 
-LocalMate Agent 4 是一个面向上海本地周末出行的 AI 路线规划 Demo。用户可以输入出发地、目的地、预算、人数、时间、偏好和限制条件，系统会结合本地地点表、RAG 案例库、高德地图能力和 LLM 生成可视化路线方案。
+LocalMate Agent 是一个面向上海本地周末出行的 AI 路线规划 Demo。用户可以输入出发地、目的地、预算、人数、时间、偏好和限制条件，系统会结合本地地点表、RAG 案例库、高德地图能力和 LLM 生成可视化路线方案。
 
 项目支持两种模式：
 
@@ -34,7 +34,7 @@ LocalMate Agent 4 是一个面向上海本地周末出行的 AI 路线规划 Dem
 请先将提交包解压到任意本地目录，例如：
 
 ```text
-C:\Users\YourName\Desktop\LocalMate_Agent4
+C:\Users\YourName\Desktop\LocalMate_Agent
 ```
 
 
@@ -44,7 +44,7 @@ C:\Users\YourName\Desktop\LocalMate_Agent4
 conda env create -f environment.yml
 ```
 
-该命令会创建名为 `localmate_agent4` 的 Conda 环境。后续启动脚本会自动查找这个环境。
+该命令会创建名为 `localmate_agent` 的 Conda 环境。后续启动脚本会自动查找这个环境。
 
 如果环境已经创建过，可以跳过这一步。若需要手动检查环境是否存在，可以执行：
 
@@ -79,7 +79,7 @@ AMAP_API_KEY=你的高德Web服务Key
 .\start_demo.ps1 -Mode single
 ```
 
-脚本会自动定位到自身所在目录，并自动查找 `localmate_agent4` Conda 环境或当前已激活的 Python 环境，不需要手动修改代码路径。
+脚本会自动定位到自身所在目录，并自动查找 `localmate_agent` Conda 环境或当前已激活的 Python 环境，不需要手动修改代码路径。
 
 默认访问地址：
 
